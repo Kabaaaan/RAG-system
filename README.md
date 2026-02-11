@@ -1,4 +1,4 @@
-# Personalized Educational Course Recommendation System (RAG-based)
+﻿# Personalized Educational Course Recommendation System (RAG-based)
 
 ## 📌 Project Overview
 
@@ -18,10 +18,16 @@
 │   ├── preprocessing/         # Модули препроцессинга и чанкирования
 │   ├── api/                   # FastAPI приложение (заглушка)
 │   ├── config/                # Конфигурация приложения
-│   └── prompts/               # Системные промпты для LLM
+│   ├── prompts/               # Системные промпты для LLM
+│   └── utils/                 # Вспомогательные утилиты (логирование и т.д.)
 ├── tests/                     # Тесты
+├── docs/                      # Документация
+├── migrations/                # Миграции БД
 ├── docker-compose.yml         # Docker Compose конфигурация
-└── .env.example              # Шаблон переменных окружения
+├── pyproject.toml             # Единый конфиг Ruff/mypy и метаданные проекта
+├── .pre-commit-config.yaml    # Конфигурация pre-commit хуков
+├── .env.example               # Шаблон переменных окружения
+└── .env.dev                   # Локальная dev-конфигурация окружения
 ```
 
 ## 🛠️ Технологический стек
@@ -173,23 +179,23 @@ repos:
     hooks:
       - id: ruff
         args: [--fix]
-  
+      - id: ruff-format
+
   - repo: https://github.com/pre-commit/mirrors-mypy
     rev: v1.7.0
     hooks:
       - id: mypy
-        args: [--ignore-missing-imports]
 ```
 
 ### Проверка кода
 
 ```bash
 # Запуск Ruff для форматирования и линтинга
-ruff check --fix src/
-ruff format src/
+ruff check --fix src/ tests/
+ruff format src/ tests/
 
 # Проверка типов с mypy
-mypy src/
+mypy
 
 # Запуск всех pre-commit хуков
 pre-commit run --all-files
