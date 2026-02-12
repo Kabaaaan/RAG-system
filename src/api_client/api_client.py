@@ -91,8 +91,6 @@ class ApiClient:
         return response
 
     def _normalize_request_url(self, url: str) -> str:
-        # If base URL already points to a concrete endpoint (e.g. .../chat/completions),
-        # empty relative URL may become .../chat/completions/ and break strict routers.
         if not url or not url.strip():
             return self._base_url
         return url
