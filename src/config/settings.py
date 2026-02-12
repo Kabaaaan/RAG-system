@@ -1,0 +1,67 @@
+from functools import lru_cache
+
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class AppSettings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+        case_sensitive=False,
+    )
+
+    postgres_host: str = Field(default="localhost", validation_alias="POSTGRES_HOST")
+    postgres_port: int = Field(default=5432, validation_alias="POSTGRES_PORT")
+    postgres_db: str = Field(default="", validation_alias="POSTGRES_DB")
+    postgres_user: str = Field(default="", validation_alias="POSTGRES_USER")
+    postgres_password: str = Field(default="", validation_alias="POSTGRES_PASSWORD")
+
+    qdrant_host: str = Field(default="localhost", validation_alias="QDRANT_HOST")
+    qdrant_port: int = Field(default=6333, validation_alias="QDRANT_PORT")
+    qdrant_collection: str = Field(default="", validation_alias="QDRANT_COLLECTION")
+
+    llm_api_url: str = Field(default="", validation_alias="LLM_API_URL")
+    llm_api_key: str = Field(default="", validation_alias="LLM_API_KEY")
+    llm_model: str = Field(default="", validation_alias="LLM_MODEL")
+
+    embedding_model_api_url: str = Field(default="", validation_alias="EMBEDDING_MODEL_API_URL")
+    embedding_model_api_key: str = Field(default="", validation_alias="EMBEDDING_MODEL_API_KEY")
+    embedding_model: str = Field(default="", validation_alias="EMBEDDING_MODEL")
+
+    api_timeout_seconds: float = Field(default=30.0, validation_alias="API_TIMEOUT_SECONDS")
+
+    log_level: str = Field(default="INFO", validation_alias="LOG_LEVEL")
+    environment: str = Field(default="development", validation_alias="ENVIRONMENT")
+
+    @property
+    def llm_api_base_url(self) -> str:
+        return self.llm_api_url.strip()
+
+    @property
+    def llm_api_bearer_token(self) -> str | None:
+        token = self.llm_api_key.strip()
+        return token or None
+
+    @property
+    def embedding_api_base_url(self) -> str:
+        return self.embedding_model_api_url.strip()
+
+    @property
+    def embedding_api_bearer_token(self) -> str | None:
+        token = self.embedding_model_api_key.strip()
+        return token or None
+
+    @property
+    def api_base_url(self) -> str:
+        return self.llm_api_base_url
+
+    @property
+    def api_bearer_token(self) -> str | None:
+        return self.llm_api_bearer_token
+
+
+@lru_cache(maxsize=1)
+def get_settings() -> AppSettings:
+    return AppSettings()
