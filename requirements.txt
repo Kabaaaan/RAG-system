@@ -1,8 +1,10 @@
 ﻿click
 fastapi
+uvicorn
 httpx
-pydantic-settings
+pydantic
 qdrant-client
 sqlalchemy
 psycopg2-binary
-uvicorn
+langchain
+langchain-text-splitters
