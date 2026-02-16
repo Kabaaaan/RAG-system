@@ -7,7 +7,10 @@ from src.config.settings import AppSettings
 from src.preprocessing import create_embedding_passage_input, split_text
 from src.rag_core.embeddings import fetch_embedding
 from src.rag_core.schemas import CourseIndexingStats, CourseLike
+from src.utils import get_logger
 from src.vector_db import PointData, QdrantVectorClient
+
+logger = get_logger(__name__)
 
 
 async def index_courses_in_vector_db(
@@ -18,6 +21,7 @@ async def index_courses_in_vector_db(
 ) -> CourseIndexingStats:
     if not courses:
         return CourseIndexingStats(courses_count=0, chunks_count=0, collection_recreated=False)
+    logger.info("Indexing courses in vector DB", extra={"courses_count": len(courses)})
 
     points: list[PointData] = []
     async with ApiClient.for_embeddings(settings=settings) as embedding_client:

@@ -26,7 +26,7 @@ def create_embedding_question_input(digital_footprints: DigitalFootprints) -> st
         events = digital_footprints
 
     if not events:
-        text = f"{digital_footprints}"
+        text = f"{digital_footprints}".strip()
         return "query: " + text
 
     views: list[str] = []
@@ -67,15 +67,15 @@ def create_embedding_question_input(digital_footprints: DigitalFootprints) -> st
 
     parts: list[str] = []
     if views:
-        parts.append("Просмотр: " + "; ".join(views))
+        parts.append("Просмотры: " + "; ".join(views))
     if favorites:
         parts.append("Избранное: " + "; ".join(favorites))
     if searches:
-        parts.append("Посик: " + "; ".join(searches))
+        parts.append("Поиск: " + "; ".join(searches))
     if articles:
-        parts.append("Статья: " + "; ".join(articles))
+        parts.append("Статьи: " + "; ".join(articles))
     if other:
         parts.append("Другое: " + "; ".join(other))
 
-    summary = " | ".join(parts)
+    summary = " | ".join(parts).strip()
     return "query: " + summary

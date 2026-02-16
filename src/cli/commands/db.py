@@ -1,30 +1,12 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
-from typing import Any
 
 import click
 
 from src.cli.context import CLIContext
+from src.cli.loaders import load_courses
 from src.services import ServiceError, init_db, list_and_vectorize_courses, seed_courses
-
-
-def _load_courses(path: Path) -> list[dict[str, Any]]:
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except FileNotFoundError as exc:
-        raise click.ClickException(f"File not found: {path}") from exc
-    except json.JSONDecodeError as exc:
-        raise click.ClickException(f"Invalid JSON in {path}: {exc}") from exc
-
-    if isinstance(payload, list):
-        return [course for course in payload if isinstance(course, dict)]
-    if isinstance(payload, dict):
-        courses = payload.get("courses")
-        if isinstance(courses, list):
-            return [course for course in courses if isinstance(course, dict)]
-    raise click.ClickException("Courses JSON must be a list or an object with a 'courses' list.")
 
 
 @click.command("init-db")
@@ -60,7 +42,7 @@ def init_db_command(
         )
         inserted = 0
         if not skip_courses_seed:
-            courses = _load_courses(courses_file)
+            courses = load_courses(courses_file)
             if not courses:
                 raise click.ClickException("No courses found in the provided file.")
             inserted = seed_courses(

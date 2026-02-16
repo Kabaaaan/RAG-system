@@ -8,7 +8,10 @@ from src.config.settings import AppSettings, get_settings
 from src.preprocessing import create_embedding_question_input
 from src.rag_core.embeddings import fetch_embedding
 from src.rag_core.schemas import RetrievedCourse
+from src.utils import get_logger
 from src.vector_db import QdrantVectorClient
+
+logger = get_logger(__name__)
 
 
 async def retrieve_courses_for_footprints(
@@ -49,6 +52,10 @@ async def retrieve_courses_for_footprints(
             )
 
     courses = sorted(by_course_id.values(), key=lambda item: item.score, reverse=True)[:top_k]
+    logger.info(
+        "Retrieved similar courses",
+        extra={"search_k": search_k, "top_k": top_k, "result_count": len(courses)},
+    )
     return courses, query_text
 
 

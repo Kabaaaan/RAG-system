@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
-from typing import Any
 
 import click
 
 from src.cli.context import CLIContext
+from src.cli.loaders import load_users
 from src.cli.output import render_table
 from src.services import AlreadyExistsError, ServiceError, create_user, list_users, seed_users
 
@@ -54,24 +53,6 @@ def show_users_command(context: CLIContext) -> None:
     click.echo(render_table(["ID", "Login", "Updated At"], rows))
 
 
-def _load_users(path: Path) -> list[dict[str, Any]]:
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except FileNotFoundError as exc:
-        raise click.ClickException(f"File not found: {path}") from exc
-    except json.JSONDecodeError as exc:
-        raise click.ClickException(f"Invalid JSON in {path}: {exc}") from exc
-
-    if not isinstance(payload, list):
-        raise click.ClickException("Users JSON must be a list.")
-
-    users: list[dict[str, Any]] = []
-    for item in payload:
-        if isinstance(item, dict):
-            users.append(item)
-    return users
-
-
 @click.command("seed-users")
 @click.option(
     "--file",
@@ -82,7 +63,7 @@ def _load_users(path: Path) -> list[dict[str, Any]]:
 )
 @click.pass_obj
 def seed_users_command(context: CLIContext, file_path: Path) -> None:
-    users = _load_users(file_path)
+    users = load_users(file_path)
     if not users:
         raise click.ClickException("No users found in the provided file.")
 

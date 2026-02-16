@@ -13,6 +13,9 @@ from src.database.repositories import RecommendationRepository, UserRepository
 from src.database.session import session_scope
 from src.rag_core import RAGPipeline, RetrievedCourse
 from src.services.errors import NotFoundError
+from src.utils import get_logger
+
+logger = get_logger(__name__)
 
 
 @dataclass(slots=True, frozen=True)
@@ -59,6 +62,10 @@ def generate_recommendation(
     database_url: str | None = None,
     echo_sql: bool = False,
 ) -> GeneratedRecommendation:
+    logger.info(
+        "Generating recommendation",
+        extra={"login": login, "top_k": top_k, "search_k": search_k},
+    )
     with session_scope(database_url=database_url, echo=echo_sql) as session:
         user_repo = UserRepository(session)
         user = user_repo.get_by_login(login)
@@ -88,6 +95,16 @@ def generate_recommendation(
         llm_response=pipeline_result.llm_response,
         recommendation_text=pipeline_result.recommendation_text,
         retrieved_courses=pipeline_result.retrieved_courses,
+    )
+
+    logger.info(
+        "Recommendation generated",
+        extra={
+            "login": login,
+            "recommendation_id": recommendation.id,
+            "retrieved_courses": len(pipeline_result.retrieved_courses),
+            "debug_file_path": str(debug_file_path),
+        },
     )
 
     return GeneratedRecommendation(
