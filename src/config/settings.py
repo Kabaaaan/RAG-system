@@ -29,6 +29,7 @@ class AppSettings(BaseSettings):
     embedding_model_api_url: str = Field(default="", validation_alias="EMBEDDING_MODEL_API_URL")
     embedding_model_api_key: str = Field(default="", validation_alias="EMBEDDING_MODEL_API_KEY")
     embedding_model: str = Field(default="", validation_alias="EMBEDDING_MODEL")
+    embedding_vector_size: int = Field(default=768, validation_alias="EMBEDDING_VECTOR_SIZE")
 
     api_timeout_seconds: float = Field(default=30.0, validation_alias="API_TIMEOUT_SECONDS")
 
