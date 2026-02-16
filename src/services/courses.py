@@ -2,13 +2,22 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 
 from src.database.models import Course
 from src.database.repositories import CourseRepository
 from src.database.session import session_scope
 from src.rag_core import CourseIndexingStats
-from src.rag_core.pipeline import CourseLike, RAGPipeline
+from src.rag_core.pipeline import RAGPipeline
+from src.rag_core.schemas import CourseLike
 from src.services.errors import ValidationError
+
+
+@dataclass(slots=True, frozen=True)
+class _IndexableCourse:
+    id: int
+    name: str
+    description: str
 
 
 def seed_courses(
@@ -33,10 +42,18 @@ def list_courses(*, database_url: str | None = None, echo_sql: bool = False) -> 
 
 def vectorize_courses(
     *,
-    courses: Sequence[CourseLike],
+    courses: Sequence[Course],
     recreate_collection: bool = False,
 ) -> CourseIndexingStats:
-    return asyncio.run(_index_courses(courses=courses, recreate_collection=recreate_collection))
+    indexable_courses = [
+        _IndexableCourse(
+            id=int(course.id),
+            name=str(course.name),
+            description=str(course.description),
+        )
+        for course in courses
+    ]
+    return asyncio.run(_index_courses(courses=indexable_courses, recreate_collection=recreate_collection))
 
 
 async def _index_courses(

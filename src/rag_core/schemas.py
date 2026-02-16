@@ -5,9 +5,17 @@ from typing import Any, Protocol
 
 
 class CourseLike(Protocol):
-    id: int
-    name: str
-    description: str
+    @property
+    def id(self) -> int:
+        ...
+
+    @property
+    def name(self) -> str:
+        ...
+
+    @property
+    def description(self) -> str:
+        ...
 
 
 @dataclass(slots=True, frozen=True)
