@@ -14,7 +14,7 @@
 │   ├── vector_db/             # Qdrant интеграция
 │   ├── api_client/            # Асинхронный клиент для LLM API
 │   ├── preprocessing/         # Модули препроцессинга и чанкирования
-│   ├── api/                   # Слой API (этап разработки)
+│   ├── api/                   # FastAPI слой
 │   ├── config/                # Конфигурация приложения
 │   ├── prompts/               # Системные промпты для LLM
 │   └── utils/                 # Вспомогательные утилиты (логирование и т.д.)
@@ -30,11 +30,11 @@
 ## 🛠️ Технологический стек
 
 - Python 3.12+
-- Qdrant 
+- Qdrant
 - PostgreSQL
 - Docker
 - Click CLI
-- SQLAlchemy
+- FastAPI
 
 ## 🗄️ Структура базы данных
 
@@ -43,7 +43,7 @@
 ```sql
 CREATE TABLE users (
     id SERIAL PRIMARY KEY,
-    login VARCHAR(150),
+    login VARCHAR(150) UNIQUE,
     digital_footprints TEXT,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
@@ -55,7 +55,7 @@ CREATE TABLE users (
 CREATE TABLE recommendations (
     id SERIAL PRIMARY KEY,
     user_id INTEGER REFERENCES users(id),
-    text VARCHAR(300),
+    text VARCHAR(1000),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 ```
@@ -70,7 +70,7 @@ CREATE TABLE courses (
 );
 ```
 
-## Структура Qdrant 
+## Структура Qdrant
 
 - **Коллекция**: `courses_chunks`
 - **Тип**: Хранение чанков описаний курсов в виде векторов
@@ -102,84 +102,49 @@ cp .env.example .env
 3. Запустите приложение:
 
 ```bash
-docker-compose up -d postgresql qdrant
+docker compose up -d postgresql qdrant
 ```
 
 4. Проверьте работу контейнеров:
 
 ```bash
-docker-compose ps
+docker compose ps
 ```
 
-### Установка для локального запуска CLI
+## 📚 Документация
 
-```bash
-python -m pip install -r requirements.txt -r requirements-dev.txt
-```
-
-## 📖 Использование CLI
-
-### Основные команды
-
-```bash
-# Инициализировать таблицы через SQLAlchemy ORM
-python -m src.cli init-db
-
-# Пересоздать схему (удалит существующие таблицы)
-python -m src.cli init-db --drop-existing
-
-# Заполнить таблицу users из digital-footprints.json (create/update)
-python -m src.cli seed-users --file data/digital-footprints.json
-
-# Создать пользователя
-python -m src.cli create-user --login roman --digital-footprints '{"events":[]}'
-
-# Добавить рекомендацию пользователю
-python -m src.cli add-recommendation --login roman --text "Начните с курса по Python"
-
-# Сгенерировать рекомендацию через RAG (Qdrant + LLM API)
-python -m src.cli generate_recommendation --login alex_dev
-
-# Просмотр данных
-python -m src.cli show-users
-python -m src.cli show-courses
-python -m src.cli show-recommendations --login roman
-```
-
-### Полный список команд
-
-```bash
-python -m src.cli --help
-```
+- `docs/CLI.md` — команды и сценарии CLI
+- `docs/API.md` — запуск API и описание эндпоинтов
 
 ## 🔧 Конфигурация
 
 ```env
 # Database
-POSTGRES_HOST=localhost
-POSTGRES_PORT=5432
-POSTGRES_DB=rag_recommendations
-POSTGRES_USER=postgres
-POSTGRES_PASSWORD=postgres
+POSTGRES_HOST=
+POSTGRES_PORT=
+POSTGRES_DB=
+POSTGRES_USER=
+POSTGRES_PASSWORD=
 
 # Qdrant
-QDRANT_HOST=localhost
-QDRANT_PORT=6333
-QDRANT_COLLECTION=courses_chunks
+QDRANT_HOST=
+QDRANT_PORT=
+QDRANT_GRPC_PORT=
+QDRANT_COLLECTION=
 
 # LLM API
-LLM_API_URL=https://api.llm-provider.com/v1
-LLM_API_KEY=your_api_key_here
-LLM_MODEL=gpt-4o-mini
+LLM_API_URL=
+LLM_API_KEY=
+LLM_MODEL=
 
 # Embedding API
-EMBEDDING_MODEL_API_URL=https://api.embedding-provider.com/v1
-EMBEDDING_MODEL_API_KEY=your_embedding_api_key_here
-EMBEDDING_MODEL=text-embedding-3-large
-EMBEDDING_VECTOR_SIZE=3072
+EMBEDDING_MODEL_API_URL=
+EMBEDDING_MODEL_API_KEY=
+EMBEDDING_MODEL=
+EMBEDDING_VECTOR_SIZE=
 
 # Timeouts
-API_TIMEOUT_SECONDS=30.0
+API_TIMEOUT_SECONDS=
 
 # Application
 LOG_LEVEL=INFO
@@ -203,7 +168,7 @@ python -m pre_commit run --all-files
 ## 📊 Рабочий процесс RAG
 
 1. **Препроцессинг данных**:
-    - Загрузка описаний курсов из PostgreSQL
+    - Загрузка описаний курсов из JSON в PostgreSQL
     - Чанкирование текста на семантически значимые части
     - Генерация эмбеддингов для каждого чанка
     - Сохранение в Qdrant
@@ -214,19 +179,6 @@ python -m pre_commit run --all-files
     - Формирование контекста для LLM
     - Генерация персонализированных рекомендаций через LLM API
     - Сохранение рекомендаций в PostgreSQL
-
-### Рекомендуемый MVP-сценарий через CLI
-
-```bash
-# 1) Инициализация схемы + сид курсов из data/courses.json + индексация в Qdrant
-python -m src.cli init-db --drop-existing
-
-# 2) Сид пользователей из цифровых следов
-python -m src.cli seed-users --file data/digital-footprints.json
-
-# 3) Генерация рекомендации для конкретного пользователя
-python -m src.cli generate_recommendation --login alex_dev
-```
 
 ### Структура коммитов
 
@@ -239,9 +191,3 @@ refactor: рефакторинг кода
 test: добавление или исправление тестов
 chore: обновление зависимостей, конфигураций
 ```
-
-## 📈 Планы развития
-
-1. **API Layer**: Реализация полноценного FastAPI приложения для взаимодействия с системой (следующий этап).
-2. **Мониторинг**: Интеграция с Prometheus и Grafana.
-3. **ML Pipeline**: Автоматическое обновление эмбеддингов курсов.
