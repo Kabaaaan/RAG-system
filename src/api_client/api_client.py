@@ -36,7 +36,7 @@ class ApiClient:
         *,
         headers: Mapping[str, str] | None,
     ) -> dict[str, str]:
-        base_headers: dict[str, str] = {"Accept": "application/json"}
+        base_headers: dict[str, str] = {"Accept": "application/json", "Content-Type": "application/json"}
         if headers:
             base_headers.update(dict(headers))
         return base_headers
