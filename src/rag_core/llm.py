@@ -11,8 +11,8 @@ from src.config.settings import AppSettings
 async def generate_llm_response(*, settings: AppSettings, prompt: str) -> tuple[str, Any]:
     async with ApiClient.for_llm(settings=settings) as llm_client:
         payload: dict[str, Any] = {
-            "messages": [{"role": "user", "content": prompt}],
-            "temperature": 0.2,
+            "prompt": prompt,
+            "stream": False,
         }
         if settings.llm_model.strip():
             payload["model"] = settings.llm_model.strip()

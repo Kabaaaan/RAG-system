@@ -13,7 +13,7 @@ async def fetch_embedding(
     text: str,
     settings: AppSettings,
 ) -> list[float]:
-    payload: dict[str, Any] = {"inputs": text}
+    payload: dict[str, Any] = {"input": text}
     if settings.embedding_model.strip():
         payload["model"] = settings.embedding_model.strip()
     response = await client.post("", json=payload)
