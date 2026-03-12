@@ -15,7 +15,6 @@ class ApiClient:
         api_target: Literal["llm", "embedding"] = "llm",
         timeout: float | None = None,
         headers: Mapping[str, str] | None = None,
-        bearer_token: str | None = None,
         raise_for_status: bool = True,
     ) -> None:
         self._settings = settings or get_settings()
@@ -25,11 +24,7 @@ class ApiClient:
         self._base_url = resolved_base_url.rstrip("/")
 
         self._raise_for_status = raise_for_status
-        self._headers = self._build_default_headers(
-            headers=headers,
-            bearer_token=bearer_token,
-            fallback_token=self._resolve_bearer_token(api_target),
-        )
+        self._headers = self._build_default_headers(headers=headers)
         self._client = httpx.AsyncClient(
             base_url=self._base_url,
             timeout=timeout or self._settings.api_timeout_seconds,
@@ -40,30 +35,16 @@ class ApiClient:
     def _build_default_headers(
         *,
         headers: Mapping[str, str] | None,
-        bearer_token: str | None,
-        fallback_token: str | None,
     ) -> dict[str, str]:
         base_headers: dict[str, str] = {"Accept": "application/json"}
         if headers:
             base_headers.update(dict(headers))
-
-        token = (bearer_token or fallback_token or "").strip()
-        if token and "Authorization" not in base_headers:
-            base_headers["Authorization"] = f"Bearer {token}"
         return base_headers
 
     def _resolve_base_url(self, api_target: Literal["llm", "embedding"]) -> str:
         if api_target == "embedding":
             return self._settings.embedding_api_base_url
         return self._settings.llm_api_base_url
-
-    def _resolve_bearer_token(self, api_target: Literal["llm", "embedding"]) -> str | None:
-        if api_target == "embedding":
-            return self._settings.embedding_api_bearer_token
-        return self._settings.llm_api_bearer_token
-
-    def set_bearer_token(self, token: str) -> None:
-        self._client.headers["Authorization"] = f"Bearer {token}"
 
     async def request(
         self,
