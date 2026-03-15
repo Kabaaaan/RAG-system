@@ -17,12 +17,6 @@ async def generate_llm_response(*, settings: AppSettings, prompt: str) -> tuple[
         if settings.llm_model.strip():
             payload["model"] = settings.llm_model.strip()
         options: dict[str, Any] = {}
-        if settings.llm_num_predict is not None:
-            options["num_predict"] = settings.llm_num_predict
-        if settings.llm_temperature is not None:
-            options["temperature"] = settings.llm_temperature
-        if settings.llm_top_p is not None:
-            options["top_p"] = settings.llm_top_p
         if options:
             payload["options"] = options
         response = await llm_client.post(
