@@ -16,7 +16,20 @@ async def generate_llm_response(*, settings: AppSettings, prompt: str) -> tuple[
         }
         if settings.llm_model.strip():
             payload["model"] = settings.llm_model.strip()
-        response = await llm_client.post("", json=payload)
+        options: dict[str, Any] = {}
+        if settings.llm_num_predict is not None:
+            options["num_predict"] = settings.llm_num_predict
+        if settings.llm_temperature is not None:
+            options["temperature"] = settings.llm_temperature
+        if settings.llm_top_p is not None:
+            options["top_p"] = settings.llm_top_p
+        if options:
+            payload["options"] = options
+        response = await llm_client.post(
+            "",
+            json=payload,
+            timeout=settings.llm_request_timeout_seconds or settings.api_timeout_seconds,
+        )
         response_payload = response.json()
     return extract_llm_text(response_payload), response_payload
 
@@ -38,6 +51,9 @@ def extract_llm_text(payload: Any) -> str:
         generated_text = payload.get("generated_text")
         if isinstance(generated_text, str) and generated_text.strip():
             return generated_text.strip()
+        response_text = payload.get("response")
+        if isinstance(response_text, str) and response_text.strip():
+            return response_text.strip()
 
     if isinstance(payload, Sequence) and payload and not isinstance(payload, str):
         first = payload[0]
