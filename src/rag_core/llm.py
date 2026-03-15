@@ -11,12 +11,19 @@ from src.config.settings import AppSettings
 async def generate_llm_response(*, settings: AppSettings, prompt: str) -> tuple[str, Any]:
     async with ApiClient.for_llm(settings=settings) as llm_client:
         payload: dict[str, Any] = {
-            "messages": [{"role": "user", "content": prompt}],
-            "temperature": 0.2,
+            "prompt": prompt,
+            "stream": False,
         }
         if settings.llm_model.strip():
             payload["model"] = settings.llm_model.strip()
-        response = await llm_client.post("", json=payload)
+        options: dict[str, Any] = {}
+        if options:
+            payload["options"] = options
+        response = await llm_client.post(
+            "",
+            json=payload,
+            timeout=settings.llm_request_timeout_seconds or settings.api_timeout_seconds,
+        )
         response_payload = response.json()
     return extract_llm_text(response_payload), response_payload
 
@@ -38,6 +45,9 @@ def extract_llm_text(payload: Any) -> str:
         generated_text = payload.get("generated_text")
         if isinstance(generated_text, str) and generated_text.strip():
             return generated_text.strip()
+        response_text = payload.get("response")
+        if isinstance(response_text, str) and response_text.strip():
+            return response_text.strip()
 
     if isinstance(payload, Sequence) and payload and not isinstance(payload, str):
         first = payload[0]

@@ -13,7 +13,7 @@ async def fetch_embedding(
     text: str,
     settings: AppSettings,
 ) -> list[float]:
-    payload: dict[str, Any] = {"inputs": text}
+    payload: dict[str, Any] = {"input": text}
     if settings.embedding_model.strip():
         payload["model"] = settings.embedding_model.strip()
     response = await client.post("", json=payload)
@@ -26,6 +26,11 @@ async def fetch_embedding(
 
 def extract_embedding(payload: Any) -> list[float]:
     if isinstance(payload, Mapping):
+        embeddings = payload.get("embeddings")
+        if isinstance(embeddings, Sequence) and embeddings:
+            first = embeddings[0]
+            if isinstance(first, Sequence) and not isinstance(first, str):
+                return [float(value) for value in first if isinstance(value, int | float)]
         data = payload.get("data")
         if isinstance(data, Sequence) and data:
             first = data[0]
