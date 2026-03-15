@@ -25,6 +25,7 @@ class AppSettings(BaseSettings):
     llm_api_url: str = Field(default="", validation_alias="LLM_API_URL")
     llm_api_key: str = Field(default="", validation_alias="LLM_API_KEY")
     llm_model: str = Field(default="", validation_alias="LLM_MODEL")
+    llm_request_timeout_seconds: float | None = Field(default=None, validation_alias="API_TIMEOUT_SECONDS")
 
     embedding_model_api_url: str = Field(default="", validation_alias="EMBEDDING_MODEL_API_URL")
     embedding_model_api_key: str = Field(default="", validation_alias="EMBEDDING_MODEL_API_KEY")
