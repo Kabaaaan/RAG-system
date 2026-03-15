@@ -282,5 +282,16 @@
       {"event_type": "article_read", "entity_type": "article", "entity_name": "CI/CD для стартапа", "duration_seconds": 350},
       {"event_type": "favorite", "entity_type": "course", "entity_name": "DevOps и CI/CD практики", "duration_seconds": 0}
     ]
+  },
+  {
+    "login": "test_user",
+    "events": [
+      {
+        "event_type": "view",
+        "entity_type": "course",
+        "entity_name": "Алгоритмы и структуры данных",
+        "duration_seconds": 420
+      }
+    ]
   }
 ]
