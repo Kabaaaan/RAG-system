@@ -32,6 +32,10 @@ class AppSettings(BaseSettings):
     embedding_model: str = Field(default="", validation_alias="EMBEDDING_MODEL")
     embedding_vector_size: int = Field(default=768, validation_alias="EMBEDDING_VECTOR_SIZE")
 
+    mautic_api_url: str = Field(default="", validation_alias="MAUTIC_API_URL")
+    mautic_user: str = Field(default="", validation_alias="MAUTIC_USER")
+    mautic_password: str = Field(default="", validation_alias="MAUTIC_PASSWORD")
+
     api_timeout_seconds: float = Field(default=30.0, validation_alias="API_TIMEOUT_SECONDS")
 
     log_level: str = Field(default="INFO", validation_alias="LOG_LEVEL")
@@ -62,6 +66,20 @@ class AppSettings(BaseSettings):
     @property
     def api_bearer_token(self) -> str | None:
         return self.llm_api_bearer_token
+
+    @property
+    def mautic_api_base_url(self) -> str:
+        return self.mautic_api_url.strip()
+
+    @property
+    def mautic_api_username(self) -> str | None:
+        username = self.mautic_user.strip()
+        return username or None
+
+    @property
+    def mautic_api_password_value(self) -> str | None:
+        password = self.mautic_password.strip()
+        return password or None
 
 
 @lru_cache(maxsize=1)
