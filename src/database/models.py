@@ -1,54 +1,36 @@
 from __future__ import annotations
 
+import enum
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, String, Text, func
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy import DateTime, Enum, String, func
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
 class Base(DeclarativeBase):
     """Base class for all ORM models."""
 
 
-class User(Base):
-    __tablename__ = "users"
-
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    login: Mapped[str] = mapped_column(String(150), nullable=False, unique=True, index=True)
-    digital_footprints: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        nullable=False,
-        server_default=func.now(),
-        onupdate=func.now(),
-    )
-
-    recommendations: Mapped[list[Recommendation]] = relationship(
-        back_populates="user",
-        cascade="all, delete-orphan",
-    )
-
-
-class Course(Base):
-    __tablename__ = "courses"
-
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    name: Mapped[str] = mapped_column(String(150), nullable=False, unique=True, index=True)
-    description: Mapped[str] = mapped_column(Text, nullable=False)
+class RecommendationType(enum.Enum):
+    RECOMMENDATION = "recommendation"
+    ARTICLE = "article"
 
 
 class Recommendation(Base):
     __tablename__ = "recommendations"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    user_id: Mapped[int] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    type: Mapped[RecommendationType] = mapped_column(
+        Enum(
+            RecommendationType,
+            values_callable=lambda enum_class: [item.value for item in enum_class],
+        ),
+        nullable=False,
     )
-    text: Mapped[str] = mapped_column(String(1000), nullable=False)
+    lead_id: Mapped[int] = mapped_column(nullable=False, index=True)
+    text: Mapped[str] = mapped_column(String(2000), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
         server_default=func.now(),
     )
-
-    user: Mapped[User] = relationship(back_populates="recommendations")
