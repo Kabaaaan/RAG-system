@@ -1,61 +1,38 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Query, status
 
 from src.api.schemas import (
-    AddRecommendationRequest,
     GenerateRecommendationRequest,
-    GenerateRecommendationResponse,
-    RecommendationResponse,
-    RetrievedCourseResponse,
+    GetRecommendationsResponse,
+    RecommendationStatusResponse,
+    RecommendationTaskResponse,
 )
-from src.services import add_recommendation, generate_recommendation, list_recommendations
 
 router = APIRouter(prefix="/recommendations", tags=["recommendations"])
 
 
-@router.post("", response_model=RecommendationResponse, status_code=status.HTTP_201_CREATED)
-def add_recommendation_endpoint(
-    payload: AddRecommendationRequest,
-) -> RecommendationResponse:
-    recommendation = add_recommendation(
-        login=payload.login,
-        text=payload.text,
-    )
-    response: RecommendationResponse = RecommendationResponse.model_validate(recommendation)
-    return response
-
-
-@router.get("/{login}", response_model=list[RecommendationResponse], status_code=status.HTTP_200_OK)
-def list_recommendations_endpoint(
-    login: str,
-) -> list[RecommendationResponse]:
-    recommendations = list_recommendations(
-        login=login,
-    )
-    return [RecommendationResponse.model_validate(item) for item in recommendations]
-
-
-@router.post("/generate", response_model=GenerateRecommendationResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/generate", response_model=RecommendationTaskResponse, status_code=status.HTTP_202_ACCEPTED)
 def generate_recommendation_endpoint(
     payload: GenerateRecommendationRequest,
-) -> GenerateRecommendationResponse:
-    result = generate_recommendation(
-        login=payload.login,
-        top_k=payload.top_k,
-        search_k=payload.search_k,
-    )
-    return GenerateRecommendationResponse(
-        recommendation=RecommendationResponse.model_validate(result.recommendation),
-        debug_file_path=str(result.debug_file_path),
-        query_text=result.query_text,
-        retrieved_courses=[
-            RetrievedCourseResponse(
-                course_id=item.course_id,
-                name=item.name,
-                description=item.description,
-                score=item.score,
-            )
-            for item in result.retrieved_courses
-        ],
-    )
+) -> RecommendationTaskResponse:
+    # Поставить в очередь задачу на генерацию рекомендации и отдать токен пользователю
+    # + решить где и как хранить эти токены
+    pass
+    return RecommendationTaskResponse(token="string", status="queued")
+
+
+@router.get("/status", response_model=RecommendationStatusResponse, status_code=status.HTTP_200_OK)
+def get_recommendation_status_endpoint(
+    token: str = Query(..., description="Токен рекомендации"),
+) -> RecommendationStatusResponse:
+    pass  # Получить статус рекомендации
+    return RecommendationStatusResponse(status="queued")
+
+
+@router.get("", response_model=GetRecommendationsResponse, status_code=status.HTTP_200_OK)
+def get_recommendations_endpoint(
+    lead_id: str = Query(..., description="Идентификатор пользователя"),
+) -> GetRecommendationsResponse:
+    pass  # Получить список рекомендаций для этого пользователя из нашей БД
+    return GetRecommendationsResponse(lead_id=lead_id, recommendations=[])

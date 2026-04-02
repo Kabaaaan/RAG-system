@@ -1,90 +1,58 @@
 from __future__ import annotations
 
-from datetime import datetime
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
 
-class UserResponse(BaseModel):
+class BaseSchema(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
-    id: int
-    login: str
-    updated_at: datetime
+
+class GenerateRecommendationRequest(BaseSchema):
+    lead_id: str = Field(..., description="Идентификатор пользователя")
+    type: str = Field(..., description="Тип рекомендации")
 
 
-class CourseResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    name: str
-    description: str
+class RecommendationTaskResponse(BaseSchema):
+    token: str = Field(..., description="Токен рекомендации")
+    status: str = Field(..., description="Статус постановки задачи в очередь")
 
 
-class RecommendationResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-    text: str
-    created_at: datetime
+class RecommendationStatusResponse(BaseSchema):
+    status: str = Field(..., description="Текущий статус генерации рекомендации")
 
 
-class CreateUserRequest(BaseModel):
-    login: str
-    digital_footprints: str = ""
+class RecommendationItemResponse(BaseSchema):
+    id: str = Field(..., description="Идентификатор рекомендации")
+    type: str = Field(..., description="Тип рекомендации")
+    data: dict[str, Any] = Field(..., description="Данные рекомендации")
 
 
-class SeedUsersRequest(BaseModel):
-    file_path: str = "data/digital-footprints.json"
+class GetRecommendationsResponse(BaseSchema):
+    lead_id: str = Field(..., description="Идентификатор пользователя")
+    recommendations: list[RecommendationItemResponse] = Field(
+        default_factory=list,
+        description="Список рекомендаций пользователя",
+    )
 
 
-class SeedUsersResponse(BaseModel):
-    created: int
-    updated: int
-    skipped: int
+class UpdateVectorDbResourceRequest(BaseSchema):
+    resource_type: str = Field(..., description="Тип ресурса")
+    resource_id: str | None = Field(
+        default=None,
+        description="ID ресурса в основной БД. Если не передан, будет создан новый ресурс этого типа.",
+    )
 
 
-class SeedCoursesRequest(BaseModel):
-    file_path: str
+class VectorDbOperationResponse(BaseSchema):
+    operation_id: str = Field(..., description="Идентификатор операции")
+    status: str = Field(..., description="Статус постановки задачи в очередь")
 
 
-class SeedCoursesResponse(BaseModel):
-    inserted: int
+class OperationStatusResponse(BaseSchema):
+    status: str = Field(..., description="Текущий статус операции")
 
 
-class AddRecommendationRequest(BaseModel):
-    login: str
-    text: str
-
-
-class RetrievedCourseResponse(BaseModel):
-    course_id: int
-    name: str
-    description: str
-    score: float
-
-
-class GenerateRecommendationRequest(BaseModel):
-    login: str
-    top_k: int = Field(default=5, ge=1, le=20)
-    search_k: int = Field(default=20, ge=1, le=100)
-
-
-class GenerateRecommendationResponse(BaseModel):
-    recommendation: RecommendationResponse
-    debug_file_path: str
-    query_text: str
-    retrieved_courses: list[RetrievedCourseResponse]
-
-
-class InitDbRequest(BaseModel):
-    drop_existing: bool = False
-    courses_file: str = "data/courses.json"
-    skip_courses_seed: bool = False
-
-
-class InitDbResponse(BaseModel):
-    courses_seeded: int
-    courses_count: int
-    chunks_count: int
-    collection_recreated: bool
+class ResourceStatusResponse(BaseSchema):
+    status: str = Field(..., description="Статус ресурса в векторной БД")

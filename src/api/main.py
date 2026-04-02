@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from src.api.exception_handlers import register_exception_handlers
-from src.api.routers import courses_router, db_router, recommendations_router, users_router
+from src.api.routers import recommendations_router, vector_db_router
 from src.config.settings import get_settings
 from src.utils import configure_logging
 
@@ -30,10 +30,8 @@ def create_app() -> FastAPI:
     def healthcheck() -> dict[str, str]:
         return {"status": "ok"}
 
-    app.include_router(db_router)
-    app.include_router(courses_router)
-    app.include_router(users_router)
     app.include_router(recommendations_router)
+    app.include_router(vector_db_router)
 
     register_exception_handlers(app)
     return app
