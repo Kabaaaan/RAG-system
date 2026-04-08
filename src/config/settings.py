@@ -22,6 +22,10 @@ class AppSettings(BaseSettings):
     qdrant_port: int = Field(default=6333, validation_alias="QDRANT_PORT")
     qdrant_collection: str = Field(default="", validation_alias="QDRANT_COLLECTION")
 
+    redis_host: str = Field(default="localhost", validation_alias="REDIS_HOST")
+    redis_port: int = Field(default=6379, validation_alias="REDIS_PORT")
+    redis_db: int = Field(default=0, validation_alias="REDIS_DB")
+
     llm_api_url: str = Field(default="", validation_alias="LLM_API_URL")
     llm_api_key: str = Field(default="", validation_alias="LLM_API_KEY")
     llm_model: str = Field(default="", validation_alias="LLM_MODEL")
