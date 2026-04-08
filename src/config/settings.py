@@ -40,6 +40,10 @@ class AppSettings(BaseSettings):
     mautic_user: str = Field(default="", validation_alias="MAUTIC_USER")
     mautic_password: str = Field(default="", validation_alias="MAUTIC_PASSWORD")
 
+    api_auth_secret: str = Field(default="change-me", validation_alias="API_AUTH_SECRET")
+    api_jwt_algorithm: str = Field(default="HS256", validation_alias="API_JWT_ALGORITHM")
+    api_jwt_expiration_seconds: int = Field(default=2592000, validation_alias="API_JWT_EXPIRATION_SECONDS")
+
     api_timeout_seconds: float = Field(default=30.0, validation_alias="API_TIMEOUT_SECONDS")
 
     log_level: str = Field(default="INFO", validation_alias="LOG_LEVEL")
@@ -84,6 +88,10 @@ class AppSettings(BaseSettings):
     def mautic_api_password_value(self) -> str | None:
         password = self.mautic_password.strip()
         return password or None
+
+    @property
+    def api_auth_secret_value(self) -> str:
+        return self.api_auth_secret.strip()
 
 
 @lru_cache(maxsize=1)
