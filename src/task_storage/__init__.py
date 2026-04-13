@@ -1,3 +1,3 @@
-from redis_client import RedisClient
+from .redis_client import RedisClient
 
 __all__ = ["RedisClient"]
