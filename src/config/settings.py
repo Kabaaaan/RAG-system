@@ -40,6 +40,11 @@ class AppSettings(BaseSettings):
     mautic_user: str = Field(default="", validation_alias="MAUTIC_USER")
     mautic_password: str = Field(default="", validation_alias="MAUTIC_PASSWORD")
 
+    nats_port: str = Field(default="4222", validation_alias="NATS_PORT")
+    nats_monitor_port: str = Field(default="8222", validation_alias="NATS_MONITOR_PORT")
+    nats_host: str = Field(default="", validation_alias="NATS_HOST")
+    nats_stream_name: str = Field(default="", validation_alias="NATS_STREAM_NAME")
+
     api_auth_secret: str = Field(default="change-me", validation_alias="API_AUTH_SECRET")
     api_jwt_algorithm: str = Field(default="HS256", validation_alias="API_JWT_ALGORITHM")
     api_jwt_expiration_seconds: int = Field(default=2592000, validation_alias="API_JWT_EXPIRATION_SECONDS")
