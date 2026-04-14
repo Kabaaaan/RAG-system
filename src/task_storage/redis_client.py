@@ -44,6 +44,50 @@ class RedisClient:
         result = await self._client.set(name=key, value=serialized_record)
         return cast(bool, result)
 
+    async def get_count(self, prefix: str) -> int:
+        count = 0
+        cursor = 0
+
+        pattern = f"{prefix}*"
+
+        while True:
+            cursor, keys = await self._client.scan(cursor=cursor, match=pattern, count=100)
+            count += len(keys)
+
+            if cursor == 0:
+                break
+
+        return count
+
+    async def get_active_idx_count(self) -> int:
+        count = 0
+        cursor = 0
+        pattern = "idx:*"
+
+        while True:
+            cursor, keys = await self._client.scan(cursor=cursor, match=pattern, count=100)
+
+            if keys:
+                values = await self._client.mget(keys)
+
+                for value in values:
+                    if value is None:
+                        continue
+
+                    try:
+                        record = json.loads(value)
+                    except json.JSONDecodeError:
+                        continue
+
+                    status = record.get("status")
+                    if status in {"queued", "processing"}:
+                        count += 1
+
+            if cursor == 0:
+                break
+
+        return count
+
     async def aclose(self) -> None:
         await self._client.close()
 
