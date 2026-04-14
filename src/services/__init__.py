@@ -4,12 +4,16 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
+from src.services.catalog import CatalogService, NamedCatalogRecord
 from src.services.db import init_db
-from src.services.errors import (
-    NotFoundError,
-    ServiceError,
-    ValidationError,
+from src.services.errors import ServiceError
+from src.services.recommendations import (
+    LeadActionsRecord,
+    LeadRecommendationsRecord,
+    RecommendationItemRecord,
+    RecommendationsQueryService,
 )
+from src.services.staging_area import ImportedEmailResult, StagingAreaResourceRecord, StagingAreaService
 
 
 @dataclass(slots=True, frozen=True)
@@ -73,11 +77,17 @@ def generate_recommendation(
 
 __all__ = [
     "GeneratedRecommendation",
-    "NotFoundError",
+    "CatalogService",
+    "ImportedEmailResult",
+    "LeadActionsRecord",
+    "LeadRecommendationsRecord",
+    "NamedCatalogRecord",
     "RecommendationRecord",
+    "RecommendationItemRecord",
+    "RecommendationsQueryService",
     "RetrievedCourseRecord",
-    "ServiceError",
-    "ValidationError",
+    "StagingAreaResourceRecord",
+    "StagingAreaService",
     "add_recommendation",
     "generate_recommendation",
     "init_db",
