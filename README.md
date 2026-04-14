@@ -2,23 +2,27 @@
 
 ## 📌 Описание проекта
 
-Система генерации персонализированных рекомендаций учебных курсов на основе цифрового следа пользователей. Система использует RAG (Retrieval-Augmented Generation) подход для создания релевантных рекомендаций, анализируя поведение пользователей и семантическое сходство курсов.
+Система генерации персонализированных рекомендаций на основе цифрового следа пользователей. Система использует RAG (Retrieval-Augmented Generation) подход для создания релевантных рекомендаций, анализируя поведение пользователей и семантическое сходство курсов. 
+Текущий репозиторий представляет ядро системы и API как основной интерфейс взаимодействия для пользовательских приложений.
 
 ## 🏗️ Архитектура проекта
 
 ```
 ├── src/
 │   ├── rag_core/              # Ядро RAG-системы
-│   ├── cli/                   # CLI-клиент (Click)
+│   ├── query_client/          # NATS-клиент для работы с очередью
+│   ├── services/              # Сервисный слой 
+│   ├── task_storage/          # Redis-клиент для поддержания актуальности статусов системы задач
 │   ├── database/              # PostgreSQL + SQLAlchemy ORM
 │   ├── vector_db/             # Qdrant интеграция
 │   ├── api_client/            # Асинхронный клиент для LLM API
+│   ├── mautic/                # Надстройка над ApiClient для работы с Mautic
 │   ├── preprocessing/         # Модули препроцессинга и чанкирования
 │   ├── api/                   # FastAPI слой
 │   ├── config/                # Конфигурация приложения
 │   ├── prompts/               # Системные промпты для LLM
+│   ├── workers/               # Асинхронные воркеры для работы с LLM и Эмбеддиг моделью
 │   └── utils/                 # Вспомогательные утилиты (логирование и т.д.)
-├── data/                      # Mock данные для тестирования при разработке
 ├── tests/                     # Тесты
 ├── docs/                      # Документация
 ├── docker-compose.yml         # Docker Compose конфигурация
@@ -33,49 +37,46 @@
 - Qdrant
 - PostgreSQL
 - Docker
-- Click CLI
+- NATS
+- Redis
+- Ollama
 - FastAPI
+- Mautic API
 
 ## 🗄️ Структура базы данных
 
-### `users`
+### 1. `resource_types` — Справочник типов ресурсов
 
-```sql
-CREATE TABLE users (
-    id SERIAL PRIMARY KEY,
-    login VARCHAR(150) UNIQUE,
-    digital_footprints TEXT,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-);
-```
+### 2. `rag_resources` — Основное хранилище ресурсов (DataLake / staging-area)
 
-### `recommendations`
+### 3. `recommendation_types` — Справочник типов рекомендаций
 
-```sql
-CREATE TABLE recommendations (
-    id SERIAL PRIMARY KEY,
-    user_id INTEGER REFERENCES users(id),
-    text VARCHAR(1000),
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-);
-```
+### 4. `recommendations` — Хранилище сгенерированных рекомендаций
 
-### `courses`
+**Важные особенности:**
+- Ресурсы **только добавляются**. Обновление и удаление **не поддерживаются**.
+- После вставки ресура в `rag_resources` автоматически запускается задача на индексацию в векторную БД.
 
-```sql
-CREATE TABLE courses (
-    id SERIAL PRIMARY KEY,
-    name VARCHAR(150),
-    description TEXT
-);
-```
+![Auth](docs/img/db.png)
 
-## Структура Qdrant
+   
+## Основные бизнес-процессы
 
-- **Коллекция**: `courses_chunks`
-- **Тип**: Хранение чанков описаний курсов в виде векторов
-- **Метрика расстояния**: Cosine similarity
+1. Управление доступом к API
+2. Индексация нового контента для RAG
+3. Генерация персональных рекомендаций
+4. Управление рекомендательной логикой (настройка промптов и параметров моделей)
 
+Пункт **4** не описан диаграммой, это простая замена текста промптов.
+
+![Auth](docs/img/auth.png)
+
+![Auth](docs/img/index.png)
+
+![Auth](docs/img/generate.png)
+   
+   
+   
 ## 🚀 Быстрый старт
 
 ### Предварительные требования
@@ -102,53 +103,13 @@ cp .env.example .env
 3. Запустите приложение:
 
 ```bash
-docker compose up -d postgresql qdrant
+docker compose up 
 ```
 
 4. Проверьте работу контейнеров:
 
 ```bash
 docker compose ps
-```
-
-## 📚 Документация
-
-- `docs/CLI.md` — команды и сценарии CLI
-- `docs/API.md` — запуск API и описание эндпоинтов
-
-## 🔧 Конфигурация
-
-```env
-# Database
-POSTGRES_HOST=
-POSTGRES_PORT=
-POSTGRES_DB=
-POSTGRES_USER=
-POSTGRES_PASSWORD=
-
-# Qdrant
-QDRANT_HOST=
-QDRANT_PORT=
-QDRANT_GRPC_PORT=
-QDRANT_COLLECTION=
-
-# LLM API
-LLM_API_URL=
-LLM_API_KEY=
-LLM_MODEL=
-
-# Embedding API
-EMBEDDING_MODEL_API_URL=
-EMBEDDING_MODEL_API_KEY=
-EMBEDDING_MODEL=
-EMBEDDING_VECTOR_SIZE=
-
-# Timeouts
-API_TIMEOUT_SECONDS=
-
-# Application
-LOG_LEVEL=INFO
-ENVIRONMENT=development
 ```
 
 ## 🔍 Качество кода
@@ -164,21 +125,6 @@ python -m mypy src tests
 # Запуск всех pre-commit хуков
 python -m pre_commit run --all-files
 ```
-
-## 📊 Рабочий процесс RAG
-
-1. **Препроцессинг данных**:
-    - Загрузка описаний курсов из JSON в PostgreSQL
-    - Чанкирование текста на семантически значимые части
-    - Генерация эмбеддингов для каждого чанка
-    - Сохранение в Qdrant
-
-2. **Генерация рекомендаций**:
-    - Получение цифрового следа пользователя
-    - Семантический поиск релевантных чанков курсов в Qdrant
-    - Формирование контекста для LLM
-    - Генерация персонализированных рекомендаций через LLM API
-    - Сохранение рекомендаций в PostgreSQL
 
 ### Структура коммитов
 
