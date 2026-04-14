@@ -8,7 +8,6 @@ from fastapi import Depends, FastAPI
 from src.api.auth import require_api_auth
 from src.api.exception_handlers import register_exception_handlers
 from src.api.routers import (
-    api_staging_area_router,
     auth_router,
     recommendations_router,
     staging_area_router,
@@ -24,6 +23,13 @@ def create_app() -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+        # from src.query_client.nats_client import nats_client
+        # try:
+        #     await nats_client.connect()
+        #     print("NATS клиент успешно подключён при старте API")
+        # except Exception as e:
+        #     print(f"Не удалось подключиться к NATS: {e}")
+
         configure_logging(settings.log_level)
         yield
 
@@ -36,7 +42,6 @@ def create_app() -> FastAPI:
 
     app.include_router(auth_router)
     app.include_router(system_router)
-    app.include_router(api_staging_area_router, dependencies=[Depends(require_api_auth)])
     app.include_router(staging_area_router, dependencies=[Depends(require_api_auth)])
     app.include_router(recommendations_router, dependencies=[Depends(require_api_auth)])
     app.include_router(vector_db_router, dependencies=[Depends(require_api_auth)])
