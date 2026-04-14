@@ -25,6 +25,8 @@
 │   └── utils/                 # Вспомогательные утилиты (логирование и т.д.)
 ├── tests/                     # Тесты
 ├── docs/                      # Документация
+├── data/                      # Вспомогательные данные
+├── scripts/                   # Скрипты для разработки и деплоя
 ├── docker-compose.yml         # Docker Compose конфигурация
 ├── pyproject.toml             # Единый конфиг Ruff/mypy и метаданные проекта
 ├── .pre-commit-config.yaml    # Конфигурация pre-commit хуков
@@ -46,11 +48,8 @@
 ## 🗄️ Структура базы данных
 
 ### 1. `resource_types` — Справочник типов ресурсов
-
 ### 2. `rag_resources` — Основное хранилище ресурсов (DataLake / staging-area)
-
 ### 3. `recommendation_types` — Справочник типов рекомендаций
-
 ### 4. `recommendations` — Хранилище сгенерированных рекомендаций
 
 **Важные особенности:**
@@ -111,6 +110,14 @@ docker compose up
 ```bash
 docker compose ps
 ```
+
+5. Инициализация БД и запуск API :
+
+```bash
+python scripts\prepare_db.py --mode rebuild
+python -m src.api
+```
+
 
 ## 🔍 Качество кода
 
