@@ -15,7 +15,7 @@ from src.config.settings import AppSettings, get_settings
 class RAGTasksClient:
     def __init__(self, settings: AppSettings | None = None) -> None:
         self._settings = settings or get_settings()
-        self.servers = f"nats://{self._settings.nats_host}:{self._settings.nats_port}"
+        self.servers = [f"nats://{self._settings.nats_host}:{self._settings.nats_port}"]
         self.nc: NATS | None = None
         self.js: JetStreamContext | None = None
         self.stream_name = self._settings.nats_stream_name
