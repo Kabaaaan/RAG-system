@@ -58,18 +58,19 @@ class RecommendationTypesResponse(BaseSchema):
 
 
 class StagingAreaResourceRequest(BaseSchema):
-    resource_id: str = Field(..., description="External resource identifier.")
     resource_type: str = Field(..., description="Resource type.")
-    data: dict[str, Any] = Field(default_factory=dict, description="Serialized resource payload.")
+    text: str = Field(..., description="Resource text content.")
+    url: str | None = Field(default=None, description="Optional resource URL.")
+    title: str | None = Field(default=None, description="Optional resource title.")
 
 
 class StagingAreaTaskResponse(BaseSchema):
-    resource_id: str = Field(..., description="Resource identifier.")
+    resource_id: int = Field(..., description="Resource identifier.")
     status: str = Field(..., description="Task status.")
 
 
 class StagingAreaResourceResponse(BaseSchema):
-    resource_id: str = Field(..., description="Resource identifier.")
+    resource_id: int = Field(..., description="Resource identifier.")
     resource_type: str = Field(..., description="Resource type.")
     data: dict[str, Any] = Field(default_factory=dict, description="Stored resource payload.")
 
@@ -117,4 +118,12 @@ class GetRecommendationsResponse(BaseSchema):
     recommendations: list[RecommendationItemResponse] = Field(
         default_factory=list,
         description="Stored recommendations for the lead.",
+    )
+
+
+class LeadActionsResponse(BaseSchema):
+    lead_id: str = Field(..., description="Lead identifier.")
+    actions: list[RecommendationItemResponse] = Field(
+        default_factory=list,
+        description="Normalized user actions from Mautic.",
     )
