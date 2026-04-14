@@ -21,6 +21,8 @@ def system_healthcheck_endpoint() -> SystemHealthResponse:
             "vector_db": HealthComponentResponse(status="ready", latency_ms=0),
             "queue": HealthComponentResponse(status="healthy", queue_depth=0),
             "llm_service": HealthComponentResponse(status="available", latency_ms=0),
+            "embedding_service": HealthComponentResponse(status="available", latency_ms=0),
+            "redis": HealthComponentResponse(status="available", latency_ms=0),
         },
         uptime_seconds=0,
     )
