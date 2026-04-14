@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import cast
 
 from sqlalchemy import Select, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from src.database.models import RAGResource, Recommendation, RecommendationType, ResourceType
 
@@ -30,7 +30,7 @@ class ResourceTypeRepository:
         return self.create(name=name)
 
     def get_all(self) -> list[ResourceType]:
-        statement: Select[tuple[ResourceType]] = select(ResourceType)
+        statement: Select[tuple[ResourceType]] = select(ResourceType).order_by(ResourceType.name.asc())
         result = self._session.scalars(statement).all()
         return list(result)
 
@@ -63,9 +63,21 @@ class ResourceRepository:
         self._session.flush()
         return resource
 
+    def get_by_id(self, *, resource_id: int) -> RAGResource | None:
+        statement: Select[tuple[RAGResource]] = (
+            select(RAGResource)
+            .options(joinedload(RAGResource.resource_type))
+            .where(RAGResource.id == resource_id)
+        )
+        resource = self._session.scalar(statement)
+        return cast(RAGResource | None, resource)
+
     def list(self, *, limit: int = 100) -> list[RAGResource]:
         statement: Select[tuple[RAGResource]] = (
-            select(RAGResource).order_by(RAGResource.created_at.desc(), RAGResource.id.desc()).limit(limit)
+            select(RAGResource)
+            .options(joinedload(RAGResource.resource_type))
+            .order_by(RAGResource.created_at.desc(), RAGResource.id.desc())
+            .limit(limit)
         )
         return list(self._session.scalars(statement).all())
 
@@ -109,7 +121,9 @@ class RecommendationTypeRepository:
         return self.create(name=name)
 
     def get_all(self) -> list[RecommendationType]:
-        statement: Select[tuple[RecommendationType]] = select(RecommendationType)
+        statement: Select[tuple[RecommendationType]] = select(RecommendationType).order_by(
+            RecommendationType.name.asc()
+        )
         result = self._session.scalars(statement).all()
         return list(result)
 
@@ -143,6 +157,7 @@ class RecommendationRepository:
     def list_for_lead(self, *, lead_id: int, limit: int = 100) -> list[Recommendation]:
         statement: Select[tuple[Recommendation]] = (
             select(Recommendation)
+            .options(joinedload(Recommendation.recommendation_type))
             .where(Recommendation.lead_id == lead_id)
             .order_by(Recommendation.created_at.desc(), Recommendation.id.desc())
             .limit(limit)
