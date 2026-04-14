@@ -1,3 +1,5 @@
+# ruff: noqa: E402
+
 from __future__ import annotations
 
 import argparse
@@ -6,12 +8,12 @@ from pathlib import Path
 
 import psycopg2
 
-from src.database.session import build_database_url
-from src.services.db import init_db
-
 ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
+
+from src.database.session import build_database_url
+from src.services.db import init_db
 
 REFERENCE_DATA_SQL = ROOT_DIR / "data" / "reference_data_seed.sql"
 REBUILD_SCHEMA_SQL = ROOT_DIR / "migrations" / "20260406_01_rebuild_rag_schema.sql"
