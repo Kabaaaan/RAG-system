@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import base64
 import re
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from typing import Any
 
 import httpx
@@ -10,6 +10,7 @@ from bs4 import BeautifulSoup, Comment
 
 from src.api_client.api_client import ApiClient
 from src.config.settings import AppSettings, get_settings
+from src.mauitc.activity_reader import MauticActivityReader
 
 
 class MauticClient:
@@ -177,6 +178,35 @@ class MauticClient:
             params=params,
             headers=headers,
             timeout=timeout,
+        )
+
+    async def get_contact_activity_events(
+        self,
+        lead_id: int | str,
+        *,
+        params: Mapping[str, Any] | None = None,
+        headers: Mapping[str, str] | None = None,
+        timeout: float | None = None,
+        include_types: Iterable[str] | None = None,
+        exclude_types: Iterable[str] | None = None,
+        parse_only: bool = True,
+        keep_raw: bool = False,
+    ) -> list[dict[str, Any]]:
+        response = await self.get_contact_activity(
+            lead_id=lead_id,
+            params=params,
+            headers=headers,
+            timeout=timeout,
+        )
+        payload = response.json()
+        if not isinstance(payload, Mapping):
+            return []
+        return MauticActivityReader.read_events(
+            payload,
+            include_types=include_types,
+            exclude_types=exclude_types,
+            parse_only=parse_only,
+            keep_raw=keep_raw,
         )
 
     async def find_contacts_by_email(
