@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import BigInteger, DateTime, ForeignKey, String, Text, func
+from sqlalchemy import BigInteger, Computed, DateTime, ForeignKey, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -24,6 +24,7 @@ class ResourceType(Base):
 
 class RAGResource(Base):
     __tablename__ = "rag_resources"
+    __table_args__ = (UniqueConstraint("hash", name="uq_rag_resources_hash"),)
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
@@ -34,6 +35,11 @@ class RAGResource(Base):
     )
     title: Mapped[str | None] = mapped_column(String(500), nullable=True)
     text: Mapped[str] = mapped_column(Text, nullable=False)
+    hash: Mapped[str] = mapped_column(
+        String(64),
+        Computed("encode(digest(text, 'sha256'), 'hex')", persisted=True),
+        nullable=False,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

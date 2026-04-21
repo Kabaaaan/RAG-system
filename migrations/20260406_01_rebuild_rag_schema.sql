@@ -2,6 +2,8 @@
 -- WARNING: destructive migration. Existing data in recommendations will be removed.
 --
 -- Up
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
 DROP TABLE IF EXISTS rag_resources;
 DROP TABLE IF EXISTS resource_types;
 DROP TABLE IF EXISTS recommendations;
@@ -20,6 +22,8 @@ CREATE TABLE rag_resources (
     type_id INTEGER NOT NULL REFERENCES resource_types(id),
     title VARCHAR(500),
     text TEXT NOT NULL,
+    hash VARCHAR(64) GENERATED ALWAYS AS (encode(digest(text, 'sha256'), 'hex')) STORED,
+    CONSTRAINT uq_rag_resources_hash UNIQUE (hash),
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
 );
 
