@@ -41,20 +41,20 @@ def create_recommendation_type_endpoint(payload: NamedEntityRequest) -> NamedEnt
     return NamedEntityResponse(id=created.id, name=created.name)
 
 
-@router.get(
-    "/recommendations/type", response_model=RecommendationTypesResponse, status_code=status.HTTP_200_OK
-)
+@router.get("/recommendations/type", response_model=RecommendationTypesResponse, status_code=status.HTTP_200_OK)
 def list_recommendation_types_endpoint() -> RecommendationTypesResponse:
     recommendation_types = catalog_service.list_recommendation_types()
     return RecommendationTypesResponse(
-        recommendation_types=[
-            NamedEntityResponse(id=item.id, name=item.name) for item in recommendation_types
-        ]
+        recommendation_types=[NamedEntityResponse(id=item.id, name=item.name) for item in recommendation_types]
     )
 
 
-# Эндпоинт создания ресурса пока что сделан без индексации в Qdrant
-@router.post("", response_model=StagingAreaTaskResponse, status_code=status.HTTP_202_ACCEPTED)
+@router.post(
+    "",
+    response_model=StagingAreaTaskResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    responses={409: {"description": "Resource with identical text already exists."}},
+)
 def index_staging_area_resource_endpoint(payload: StagingAreaResourceRequest) -> StagingAreaTaskResponse:
     created = staging_area_service.create_resource(
         resource_type=payload.resource_type,
