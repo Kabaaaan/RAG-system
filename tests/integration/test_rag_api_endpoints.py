@@ -133,6 +133,42 @@ def test_index_staging_resource_endpoint(monkeypatch) -> None:
     assert response.json() == {"resource_id": 73, "status": "queued"}
 
 
+def test_index_staging_resource_endpoint_returns_conflict_for_duplicate(monkeypatch) -> None:
+    def _raise_duplicate(
+        *,
+        resource_type: str,
+        text: str,
+        url: str | None = None,
+        title: str | None = None,
+    ) -> StagingAreaResourceRecord:
+        assert resource_type == "article"
+        assert text == "Body text"
+        assert url == "https://example.com/post"
+        assert title == "Post title"
+        raise AlreadyExistsError("Resource with identical text already exists.")
+
+    monkeypatch.setattr(
+        staging_area_router_module.staging_area_service,
+        "create_resource",
+        _raise_duplicate,
+    )
+
+    with _build_client() as client:
+        response = client.post(
+            "/staging-area",
+            json={
+                "resource_type": "article",
+                "text": "Body text",
+                "url": "https://example.com/post",
+                "title": "Post title",
+            },
+            headers=_auth_headers(),
+        )
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": "Resource with identical text already exists."}
+
+
 def test_import_mautic_email_alias_endpoint(monkeypatch) -> None:
     async def _fake_import(*, email_id: int | None = None) -> ImportedEmailResult:
         assert email_id == 15
@@ -146,7 +182,7 @@ def test_import_mautic_email_alias_endpoint(monkeypatch) -> None:
 
     with _build_client() as client:
         response = client.post(
-            "/api/staging-area/email",
+            "/staging-area/email",
             json={"id": 15},
             headers=_auth_headers(),
         )
