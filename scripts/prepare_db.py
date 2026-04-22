@@ -17,6 +17,7 @@ from src.services.db import init_db
 
 REFERENCE_DATA_SQL = ROOT_DIR / "data" / "reference_data_seed.sql"
 REBUILD_SCHEMA_SQL = ROOT_DIR / "migrations" / "20260406_01_rebuild_rag_schema.sql"
+REBUILD_SCHEMA_SQL_2 = ROOT_DIR / "migrations" / "20260421_01_add_rag_resources_hash.sql"
 
 
 def _postgres_dsn() -> str:
@@ -42,6 +43,7 @@ def init_schema() -> None:
 
 def rebuild_schema() -> None:
     _execute_sql_file(REBUILD_SCHEMA_SQL)
+    _execute_sql_file(REBUILD_SCHEMA_SQL_2)
     _execute_sql_file(REFERENCE_DATA_SQL)
 
 
