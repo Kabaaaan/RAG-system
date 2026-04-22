@@ -1,7 +1,12 @@
 from __future__ import annotations
 
+from pathlib import Path
+from tempfile import TemporaryDirectory
+
 from fastapi.testclient import TestClient
 
+import src.api.routers.mautic as mautic_router_module
+import src.api.routers.prompt as prompt_router_module
 import src.api.routers.recommendations as recommendations_router_module
 import src.api.routers.staging_area as staging_area_router_module
 from src.api.auth import create_api_key
@@ -256,4 +261,121 @@ def test_get_lead_actions_endpoint(monkeypatch) -> None:
                 "data": {"summary": "Email opened: Welcome"},
             }
         ],
+    }
+
+
+def test_get_prompt_endpoint(monkeypatch) -> None:
+    with TemporaryDirectory() as tmp_dir:
+        prompt_dir = Path(tmp_dir)
+        (prompt_dir / "warm.txt").write_text("Warm prompt text", encoding="utf-8")
+        monkeypatch.setattr(prompt_router_module, "PROMPTS_DIR", prompt_dir)
+
+        with _build_client() as client:
+            response = client.get(
+                "/prompt",
+                params={"lead_type": "warm"},
+                headers=_auth_headers(),
+            )
+
+    assert response.status_code == 200
+    assert response.json() == {"lead_type": "warm", "prompt": "Warm prompt text"}
+
+
+def test_update_prompt_endpoint(monkeypatch) -> None:
+    with TemporaryDirectory() as tmp_dir:
+        prompt_dir = Path(tmp_dir)
+        target_file = prompt_dir / "hot.txt"
+        target_file.write_text("Old prompt", encoding="utf-8")
+        monkeypatch.setattr(prompt_router_module, "PROMPTS_DIR", prompt_dir)
+
+        with _build_client() as client:
+            response = client.put(
+                "/prompt",
+                json={"lead_type": "hot", "prompt": "Updated prompt"},
+                headers=_auth_headers(),
+            )
+
+        stored_prompt = target_file.read_text(encoding="utf-8")
+
+    assert response.status_code == 200
+    assert response.json() == {"lead_type": "hot", "prompt": "Updated prompt"}
+    assert stored_prompt == "Updated prompt"
+
+
+def test_create_mautic_contact_field_endpoint(monkeypatch) -> None:
+    class _FakeResponse:
+        def json(self) -> dict[str, object]:
+            return {
+                "field": {
+                    "id": 13,
+                    "label": "Lead Score",
+                    "alias": "lead_score",
+                    "type": "text",
+                    "object": "lead",
+                }
+            }
+
+    class _FakeMauticClient:
+        async def __aenter__(self) -> _FakeMauticClient:
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:
+            return None
+
+        async def create_contact_field(self, *, json=None, data=None, headers=None, timeout=None):
+            assert json == {
+                "label": "Lead Score",
+                "alias": "lead_score",
+                "type": "text",
+                "object": "lead",
+            }
+            return _FakeResponse()
+
+    monkeypatch.setattr(mautic_router_module, "MauticClient", _FakeMauticClient)
+
+    with _build_client() as client:
+        response = client.post(
+            "/mautic/field",
+            json={"name": "Lead Score"},
+            headers=_auth_headers(),
+        )
+
+    assert response.status_code == 201
+    assert response.json() == {
+        "id": 13,
+        "name": "Lead Score",
+        "alias": "lead_score",
+        "type": "text",
+        "object": "lead",
+    }
+
+
+def test_update_mautic_contact_field_endpoint(monkeypatch) -> None:
+    class _FakeMauticClient:
+        async def __aenter__(self) -> _FakeMauticClient:
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:
+            return None
+
+        async def update_contact(self, contact_id, *, json=None, data=None, headers=None, timeout=None):
+            assert contact_id == "293231"
+            assert json == {"lead_score": "42"}
+            return None
+
+    monkeypatch.setattr(mautic_router_module, "MauticClient", _FakeMauticClient)
+
+    with _build_client() as client:
+        response = client.patch(
+            "/mautic/field",
+            json={"lead_id": "293231", "field": "lead_score", "value": "42"},
+            headers=_auth_headers(),
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "lead_id": "293231",
+        "field": "lead_score",
+        "value": "42",
+        "status": "updated",
     }
