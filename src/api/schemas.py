@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -45,9 +45,7 @@ class NamedEntityResponse(BaseSchema):
 
 
 class ResourceTypesResponse(BaseSchema):
-    resource_types: list[NamedEntityResponse] = Field(
-        default_factory=list, description="Available resource types."
-    )
+    resource_types: list[NamedEntityResponse] = Field(default_factory=list, description="Available resource types.")
 
 
 class RecommendationTypesResponse(BaseSchema):
@@ -127,3 +125,41 @@ class LeadActionsResponse(BaseSchema):
         default_factory=list,
         description="Normalized user actions from Mautic.",
     )
+
+
+LeadType = Literal["cold", "warm", "hot", "after_sale"]
+
+
+class PromptResponse(BaseSchema):
+    lead_type: LeadType = Field(..., description="Recommendation type / funnel stage.")
+    prompt: str = Field(..., description="Prompt text.")
+
+
+class UpdatePromptRequest(BaseSchema):
+    lead_type: LeadType = Field(..., description="Recommendation type / funnel stage.")
+    prompt: str = Field(..., description="Updated prompt text.")
+
+
+class CreateMauticFieldRequest(BaseSchema):
+    name: str = Field(..., description="Human-readable contact field name.")
+
+
+class MauticFieldResponse(BaseSchema):
+    id: int | None = Field(default=None, description="Mautic field identifier when returned by Mautic.")
+    name: str = Field(..., description="Human-readable field name.")
+    alias: str = Field(..., description="Mautic field alias.")
+    type: str = Field(..., description="Mautic field type.")
+    object: str = Field(..., description="Mautic object type.")
+
+
+class UpdateMauticFieldRequest(BaseSchema):
+    lead_id: str = Field(..., description="Lead identifier in Mautic.")
+    field: str = Field(..., description="Contact field alias.")
+    value: Any = Field(..., description="New field value.")
+
+
+class UpdateMauticFieldResponse(BaseSchema):
+    lead_id: str = Field(..., description="Lead identifier in Mautic.")
+    field: str = Field(..., description="Updated contact field alias.")
+    value: Any = Field(..., description="Updated field value.")
+    status: str = Field(..., description="Update operation status.")
