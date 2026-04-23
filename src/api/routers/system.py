@@ -23,12 +23,13 @@ async def _measure_component(
     probe: Callable[[], Awaitable[HealthComponentResponse]],
     *,
     fallback_status: str,
+    timeout_seconds: float,
     include_latency: bool = True,
     include_queue_depth: bool = False,
 ) -> HealthComponentResponse:
     started_at = perf_counter()
     try:
-        component = await probe()
+        component = await asyncio.wait_for(probe(), timeout=timeout_seconds)
     except Exception:
         component = HealthComponentResponse(status=fallback_status)
 
@@ -37,6 +38,11 @@ async def _measure_component(
     if include_queue_depth and component.queue_depth is None:
         component.queue_depth = 0
     return component
+
+
+def _health_probe_timeout_seconds(settings: AppSettings) -> float:
+    raw_timeout = getattr(settings, "api_timeout_seconds", 5.0)
+    return max(1.0, min(float(raw_timeout), 5.0))
 
 
 def _probe_staging_area_sync() -> None:
@@ -90,23 +96,30 @@ async def _probe_redis(settings: AppSettings) -> HealthComponentResponse:
 @router.get("/health", response_model=SystemHealthResponse, status_code=status.HTTP_200_OK)
 async def system_healthcheck_endpoint(request: Request, response: Response) -> SystemHealthResponse:
     settings = get_settings()
+    probe_timeout = _health_probe_timeout_seconds(settings)
     components = await asyncio.gather(
-        _measure_component(_probe_staging_area, fallback_status="unhealthy"),
-        _measure_component(lambda: _probe_vector_db(settings), fallback_status="unhealthy"),
+        _measure_component(_probe_staging_area, fallback_status="unhealthy", timeout_seconds=probe_timeout),
+        _measure_component(
+            lambda: _probe_vector_db(settings), fallback_status="unhealthy", timeout_seconds=probe_timeout
+        ),
         _measure_component(
             lambda: _probe_queue(settings),
             fallback_status="unhealthy",
+            timeout_seconds=probe_timeout,
             include_latency=False,
             include_queue_depth=True,
         ),
         _measure_component(
-            lambda: _probe_http_service(ApiClient.for_llm, settings=settings), fallback_status="unavailable"
+            lambda: _probe_http_service(ApiClient.for_llm, settings=settings),
+            fallback_status="unavailable",
+            timeout_seconds=probe_timeout,
         ),
         _measure_component(
             lambda: _probe_http_service(ApiClient.for_embeddings, settings=settings),
             fallback_status="unavailable",
+            timeout_seconds=probe_timeout,
         ),
-        _measure_component(lambda: _probe_redis(settings), fallback_status="unhealthy"),
+        _measure_component(lambda: _probe_redis(settings), fallback_status="unhealthy", timeout_seconds=probe_timeout),
     )
 
     component_map = {
