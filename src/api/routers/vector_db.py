@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, HTTPException, Query, status
 
 from src.api.schemas import ResourceStatusResponse, StatusResponse, VectorDbOperationResponse
 from src.services import ResourceIndexingService
+from src.task_storage import RedisClient
 
 router = APIRouter(prefix="/vector-db", tags=["vector-db"])
 resource_indexing_service = ResourceIndexingService()
@@ -16,9 +17,16 @@ def rebuild_vector_db_endpoint() -> VectorDbOperationResponse:
 
 
 @router.get("/status", response_model=StatusResponse, status_code=status.HTTP_200_OK)
-def get_vector_db_status_endpoint() -> StatusResponse:
-    pass  # Return the current vector database status.
-    return StatusResponse(status="ready")
+async def get_vector_db_status_endpoint() -> StatusResponse:
+    try:
+        async with RedisClient() as redis_client:
+            active_tasks = await redis_client.get_active_idx_count()
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Unable to determine vector DB status from Redis.",
+        ) from exc
+    return StatusResponse(status="updating" if active_tasks > 0 else "ready")
 
 
 @router.get("/resource-status", response_model=ResourceStatusResponse, status_code=status.HTTP_200_OK)

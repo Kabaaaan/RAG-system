@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 
 from fastapi import Depends, FastAPI
 
@@ -24,7 +25,7 @@ def create_app() -> FastAPI:
     settings = get_settings()
 
     @asynccontextmanager
-    async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         # from src.query_client.nats_client import nats_client
         # try:
         #     await nats_client.connect()
@@ -33,6 +34,7 @@ def create_app() -> FastAPI:
         #     print(f"Не удалось подключиться к NATS: {e}")
 
         configure_logging(settings.log_level)
+        app.state.started_at = datetime.now(UTC)
         yield
 
     app = FastAPI(
