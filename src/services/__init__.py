@@ -7,6 +7,7 @@ from pathlib import Path
 from src.services.catalog import CatalogService, NamedCatalogRecord
 from src.services.db import init_db
 from src.services.errors import ServiceError
+from src.services.indexing import ResourceIndexingService
 from src.services.recommendations import (
     LeadActionsRecord,
     LeadRecommendationsRecord,
@@ -40,9 +41,7 @@ class GeneratedRecommendation:
 
 
 def _deprecated_service(name: str) -> ServiceError:
-    return ServiceError(
-        f"Service '{name}' is no longer available because User/Course-based tables were removed."
-    )
+    return ServiceError(f"Service '{name}' is no longer available because User/Course-based tables were removed.")
 
 
 def add_recommendation(
@@ -82,6 +81,7 @@ __all__ = [
     "LeadActionsRecord",
     "LeadRecommendationsRecord",
     "NamedCatalogRecord",
+    "ResourceIndexingService",
     "RecommendationRecord",
     "RecommendationItemRecord",
     "RecommendationsQueryService",

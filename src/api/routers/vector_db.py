@@ -3,8 +3,10 @@ from __future__ import annotations
 from fastapi import APIRouter, Query, status
 
 from src.api.schemas import ResourceStatusResponse, StatusResponse, VectorDbOperationResponse
+from src.services import ResourceIndexingService
 
 router = APIRouter(prefix="/vector-db", tags=["vector-db"])
+resource_indexing_service = ResourceIndexingService()
 
 
 @router.post("/rebuild", response_model=VectorDbOperationResponse, status_code=status.HTTP_202_ACCEPTED)
@@ -20,9 +22,10 @@ def get_vector_db_status_endpoint() -> StatusResponse:
 
 
 @router.get("/resource-status", response_model=ResourceStatusResponse, status_code=status.HTTP_200_OK)
-def get_vector_db_resource_status_endpoint(
-    resource_id: str = Query(..., description="Resource identifier."),
+async def get_vector_db_resource_status_endpoint(
+    resource_id: int = Query(..., description="Resource identifier."),
 ) -> ResourceStatusResponse:
-    _ = resource_id
-    pass  # Return the resource status in the vector database.
-    return ResourceStatusResponse(status="not_found")
+    status_record = await resource_indexing_service.get_status(resource_id=resource_id)
+    if status_record is None:
+        return ResourceStatusResponse(status="not_found")
+    return ResourceStatusResponse(status=str(status_record.get("status", "not_found")))

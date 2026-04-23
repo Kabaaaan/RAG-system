@@ -13,12 +13,13 @@ from src.api.schemas import (
     StagingAreaResourceResponse,
     StagingAreaTaskResponse,
 )
-from src.services import CatalogService, StagingAreaService
+from src.services import CatalogService, ResourceIndexingService, StagingAreaService
 
 router = APIRouter(prefix="/staging-area", tags=["staging-area"])
 import_email_body = Body(default_factory=ImportEmailRequest)
 catalog_service = CatalogService()
 staging_area_service = StagingAreaService()
+resource_indexing_service = ResourceIndexingService()
 
 
 @router.post("/resorces/type", response_model=NamedEntityResponse, status_code=status.HTTP_201_CREATED)
@@ -55,13 +56,14 @@ def list_recommendation_types_endpoint() -> RecommendationTypesResponse:
     status_code=status.HTTP_202_ACCEPTED,
     responses={409: {"description": "Resource with identical text already exists."}},
 )
-def index_staging_area_resource_endpoint(payload: StagingAreaResourceRequest) -> StagingAreaTaskResponse:
+async def index_staging_area_resource_endpoint(payload: StagingAreaResourceRequest) -> StagingAreaTaskResponse:
     created = staging_area_service.create_resource(
         resource_type=payload.resource_type,
         text=payload.text,
         url=payload.url,
         title=payload.title,
     )
+    await resource_indexing_service.enqueue(resource_id=created.resource_id)
     return StagingAreaTaskResponse(resource_id=created.resource_id, status="queued")
 
 

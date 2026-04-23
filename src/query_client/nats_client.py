@@ -55,31 +55,37 @@ class RAGTasksClient:
         if self.nc:
             await self.nc.close()
 
-    async def publish_task(self, task_type: str, payload: dict[str, Any]) -> str:
+    async def publish_task(
+        self,
+        task_type: str,
+        payload: dict[str, Any],
+        *,
+        task_id: str | None = None,
+    ) -> str:
         if self.js is None:
             await self.connect()
         if self.js is None:
             raise RuntimeError("JetStream context is not initialized")
 
-        task_id = str(uuid.uuid4())
+        resolved_task_id = task_id or str(uuid.uuid4())
         subject = f"tasks.rag.{task_type}"
         message = {
-            "task_id": task_id,
+            "task_id": resolved_task_id,
             "type": task_type,
             "payload": payload,
             "created_at": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
         }
         await self.js.publish(subject, json.dumps(message).encode("utf-8"))
-        return task_id
+        return resolved_task_id
 
-    async def publish_generate(self, lead_id: str, rec_type: str) -> str:
-        return await self.publish_task("generate", {"lead_id": lead_id, "type": rec_type})
+    async def publish_generate(self, lead_id: str, rec_type: str, *, task_id: str | None = None) -> str:
+        return await self.publish_task("generate", {"lead_id": lead_id, "type": rec_type}, task_id=task_id)
 
-    async def publish_index(self, resource_id: int) -> str:
-        return await self.publish_task("index", {"resource_id": resource_id})
+    async def publish_index(self, resource_id: int, *, task_id: str | None = None) -> str:
+        return await self.publish_task("index", {"resource_id": resource_id}, task_id=task_id)
 
-    async def publish_rebuild(self) -> str:
-        return await self.publish_task("rebuild", {})
+    async def publish_rebuild(self, *, task_id: str | None = None) -> str:
+        return await self.publish_task("rebuild", {}, task_id=task_id)
 
     async def subscribe(
         self,
