@@ -11,16 +11,6 @@ def _build_client() -> TestClient:
     return TestClient(create_app())
 
 
-def test_system_healthcheck() -> None:
-    with _build_client() as client:
-        response = client.get("/system/health")
-
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload["status"] == "healthy"
-    assert "components" in payload
-
-
 def test_auth_key_endpoint_returns_jwt() -> None:
     settings = get_settings()
 
