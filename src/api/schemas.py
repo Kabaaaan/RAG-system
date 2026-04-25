@@ -127,6 +127,22 @@ class LeadActionsResponse(BaseSchema):
     )
 
 
+class RecommendationTaskItemResponse(BaseSchema):
+    id: str = Field(..., description="Task identifier.")
+    status: str = Field(..., description="Task status.")
+    type: str = Field(..., description="Task type.")
+    created_at: str = Field(..., description="Task creation timestamp.")
+    updated_at: str = Field(..., description="Task last update timestamp.")
+
+
+class LeadRecommendationTasksResponse(BaseSchema):
+    lead_id: str = Field(..., description="Lead identifier.")
+    tasks: list[RecommendationTaskItemResponse] = Field(
+        default_factory=list,
+        description="Recommendation-generation tasks stored in Redis.",
+    )
+
+
 LeadType = Literal["cold", "warm", "hot", "after_sale"]
 
 

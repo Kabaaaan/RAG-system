@@ -1,16 +1,19 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Path, Query, status
+from fastapi import APIRouter, HTTPException, Path, Query, status
 
 from src.api.schemas import (
     GenerateRecommendationRequest,
     GetRecommendationsResponse,
     LeadActionsResponse,
+    LeadRecommendationTasksResponse,
     RecommendationItemResponse,
     RecommendationStatusResponse,
+    RecommendationTaskItemResponse,
     RecommendationTaskResponse,
 )
 from src.services import RecommendationsQueryService
+from src.task_storage import RedisClient
 
 router = APIRouter(prefix="/recommendations", tags=["recommendations"])
 recommendations_query_service = RecommendationsQueryService()
@@ -39,8 +42,34 @@ async def get_lead_actions_endpoint(
     actions = await recommendations_query_service.get_actions(lead_id=lead_id)
     return LeadActionsResponse(
         lead_id=actions.lead_id,
-        actions=[
-            RecommendationItemResponse(id=item.id, type=item.type, data=item.data) for item in actions.actions
+        actions=[RecommendationItemResponse(id=item.id, type=item.type, data=item.data) for item in actions.actions],
+    )
+
+
+@router.get("/tasks/{lead_id}", response_model=LeadRecommendationTasksResponse, status_code=status.HTTP_200_OK)
+async def get_recommendation_tasks_endpoint(
+    lead_id: str = Path(..., description="Lead identifier."),
+) -> LeadRecommendationTasksResponse:
+    try:
+        async with RedisClient() as redis_client:
+            tasks = await redis_client.list_generate_tasks(lead_id=lead_id)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Unable to retrieve recommendation tasks from Redis.",
+        ) from exc
+
+    return LeadRecommendationTasksResponse(
+        lead_id=lead_id,
+        tasks=[
+            RecommendationTaskItemResponse(
+                id=task["id"],
+                status=task["status"],
+                type=task["type"],
+                created_at=task["created_at"],
+                updated_at=task["updated_at"],
+            )
+            for task in tasks
         ],
     )
 
