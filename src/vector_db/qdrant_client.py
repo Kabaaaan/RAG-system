@@ -8,7 +8,9 @@ from qdrant_client import AsyncQdrantClient
 from qdrant_client.conversions.common_types import CountResult
 from qdrant_client.http.models.models import (
     Distance,
+    FieldCondition,
     Filter,
+    MatchValue,
     PointIdsList,
     PointStruct,
     Record,
@@ -104,9 +106,7 @@ class QdrantVectorClient:
     def _resolve_collection_name(self, collection_name: str | None) -> str:
         resolved_collection = (collection_name or self._default_collection_name or "").strip()
         if not resolved_collection:
-            raise ValueError(
-                "Qdrant collection name is not set. Configure QDRANT_COLLECTION or pass collection_name."
-            )
+            raise ValueError("Qdrant collection name is not set. Configure QDRANT_COLLECTION or pass collection_name.")
         return resolved_collection
 
     async def collection_exists(self, collection_name: str | None = None) -> bool:
@@ -165,8 +165,7 @@ class QdrantVectorClient:
     ) -> UpdateResult:
         resolved_collection = self._resolve_collection_name(collection_name)
         qdrant_points = [
-            PointStruct(id=item.point_id, vector=list(item.vector), payload=dict(item.payload or {}))
-            for item in points
+            PointStruct(id=item.point_id, vector=list(item.vector), payload=dict(item.payload or {})) for item in points
         ]
         return await self._client.upsert(collection_name=resolved_collection, points=qdrant_points, wait=wait)
 
@@ -236,6 +235,23 @@ class QdrantVectorClient:
         result = await self._client.count(collection_name=resolved_collection, count_filter=query_filter)
         typed_result = cast(CountResult, result)
         return cast(int, typed_result.count)
+
+    async def has_payload_value(
+        self,
+        *,
+        key: str,
+        value: int | str,
+        collection_name: str | None = None,
+    ) -> bool:
+        query_filter = Filter(
+            must=[
+                FieldCondition(
+                    key=key,
+                    match=MatchValue(value=value),
+                )
+            ]
+        )
+        return (await self.count(collection_name=collection_name, query_filter=query_filter)) > 0
 
     async def delete_points(
         self,
