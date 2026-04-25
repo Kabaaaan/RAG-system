@@ -534,6 +534,178 @@ def test_vector_db_status_endpoint_returns_503_when_redis_is_unavailable(monkeyp
     assert response.json() == {"detail": "Unable to determine vector DB status from Redis."}
 
 
+def test_vector_db_resource_status_returns_created_when_resource_exists_in_qdrant(monkeypatch) -> None:
+    class _FakeQdrantClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:
+            return None
+
+        async def has_payload_value(self, *, key: str, value: int | str, collection_name=None) -> bool:
+            assert key == "resource_id"
+            assert value == 42
+            return True
+
+    async def _fake_connect(*args, **kwargs):
+        return _FakeQdrantClient()
+
+    monkeypatch.setattr(vector_db_router_module.QdrantVectorClient, "connect", _fake_connect)
+
+    with _build_client() as client:
+        response = client.get("/vector-db/resource-status/42", headers=_auth_headers())
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "created"}
+
+
+def test_vector_db_resource_status_returns_processing_when_indexing_in_progress(monkeypatch) -> None:
+    class _FakeQdrantClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:
+            return None
+
+        async def has_payload_value(self, *, key: str, value: int | str, collection_name=None) -> bool:
+            assert key == "resource_id"
+            assert value == 43
+            return False
+
+    async def _fake_connect(*args, **kwargs):
+        return _FakeQdrantClient()
+
+    async def _fake_get_status(*, resource_id: int):
+        assert resource_id == 43
+        return {"status": "processing"}
+
+    monkeypatch.setattr(vector_db_router_module.QdrantVectorClient, "connect", _fake_connect)
+    monkeypatch.setattr(vector_db_router_module.resource_indexing_service, "get_status", _fake_get_status)
+
+    with _build_client() as client:
+        response = client.get("/vector-db/resource-status/43", headers=_auth_headers())
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "processing"}
+
+
+def test_vector_db_resource_status_enqueues_indexing_when_requested(monkeypatch) -> None:
+    class _FakeQdrantClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:
+            return None
+
+        async def has_payload_value(self, *, key: str, value: int | str, collection_name=None) -> bool:
+            assert key == "resource_id"
+            assert value == 44
+            return False
+
+    async def _fake_connect(*args, **kwargs):
+        return _FakeQdrantClient()
+
+    async def _fake_get_status(*, resource_id: int):
+        assert resource_id == 44
+        return None
+
+    async def _fake_enqueue(*, resource_id: int):
+        assert resource_id == 44
+        return "task-id-1"
+
+    monkeypatch.setattr(vector_db_router_module.QdrantVectorClient, "connect", _fake_connect)
+    monkeypatch.setattr(vector_db_router_module.resource_indexing_service, "get_status", _fake_get_status)
+    monkeypatch.setattr(vector_db_router_module.resource_indexing_service, "enqueue", _fake_enqueue)
+
+    with _build_client() as client:
+        response = client.get(
+            "/vector-db/resource-status/44",
+            params={"create_embedding": True},
+            headers=_auth_headers(),
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "queued"}
+
+
+def test_recommendation_tasks_endpoint_returns_tasks(monkeypatch) -> None:
+    class _FakeRedisClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:
+            return None
+
+        async def list_generate_tasks(self, *, lead_id: str):
+            assert lead_id == "77"
+            return [
+                {
+                    "id": "task-1",
+                    "status": "completed",
+                    "type": "generate",
+                    "created_at": "2026-04-25T08:00:00Z",
+                    "updated_at": "2026-04-25T08:01:00Z",
+                }
+            ]
+
+    monkeypatch.setattr(recommendations_router_module, "RedisClient", _FakeRedisClient)
+
+    with _build_client() as client:
+        response = client.get("/recommendations/tasks/77", headers=_auth_headers())
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "lead_id": "77",
+        "tasks": [
+            {
+                "id": "task-1",
+                "status": "completed",
+                "type": "generate",
+                "created_at": "2026-04-25T08:00:00Z",
+                "updated_at": "2026-04-25T08:01:00Z",
+            }
+        ],
+    }
+
+
+def test_recommendation_tasks_endpoint_returns_empty_list(monkeypatch) -> None:
+    class _FakeRedisClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:
+            return None
+
+        async def list_generate_tasks(self, *, lead_id: str):
+            assert lead_id == "999"
+            return []
+
+    monkeypatch.setattr(recommendations_router_module, "RedisClient", _FakeRedisClient)
+
+    with _build_client() as client:
+        response = client.get("/recommendations/tasks/999", headers=_auth_headers())
+
+    assert response.status_code == 200
+    assert response.json() == {"lead_id": "999", "tasks": []}
+
+
+def test_recommendation_tasks_endpoint_returns_503_when_redis_is_unavailable(monkeypatch) -> None:
+    class _BrokenRedisClient:
+        async def __aenter__(self):
+            raise RuntimeError("Redis unavailable")
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:
+            return None
+
+    monkeypatch.setattr(recommendations_router_module, "RedisClient", _BrokenRedisClient)
+
+    with _build_client() as client:
+        response = client.get("/recommendations/tasks/77", headers=_auth_headers())
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": "Unable to retrieve recommendation tasks from Redis."}
+
+
 def test_update_mautic_contact_field_endpoint(monkeypatch) -> None:
     class _FakeMauticClient:
         async def __aenter__(self) -> _FakeMauticClient:
