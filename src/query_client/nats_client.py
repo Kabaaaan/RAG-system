@@ -78,8 +78,11 @@ class RAGTasksClient:
         await self.js.publish(subject, json.dumps(message).encode("utf-8"))
         return resolved_task_id
 
-    async def publish_generate(self, lead_id: str, rec_type: str, *, task_id: str | None = None) -> str:
-        return await self.publish_task("generate", {"lead_id": lead_id, "type": rec_type}, task_id=task_id)
+    async def publish_generate(self, lead_id: str, rec_type: str | None = None, *, task_id: str | None = None) -> str:
+        payload: dict[str, Any] = {"lead_id": lead_id}
+        if rec_type is not None and rec_type.strip():
+            payload["type"] = rec_type.strip()
+        return await self.publish_task("generate", payload, task_id=task_id)
 
     async def publish_index(self, resource_id: int, *, task_id: str | None = None) -> str:
         return await self.publish_task("index", {"resource_id": resource_id}, task_id=task_id)

@@ -131,6 +131,9 @@ class RedisClient:
         tasks.sort(key=lambda item: item["created_at"], reverse=True)
         return tasks
 
+    async def get_generate_task(self, *, task_id: str) -> dict[str, Any] | None:
+        return await self.get_record(f"gen:{task_id}")
+
     async def aclose(self) -> None:
         await self._client.close()
 

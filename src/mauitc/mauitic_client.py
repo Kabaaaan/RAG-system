@@ -209,6 +209,23 @@ class MauticClient:
             keep_raw=keep_raw,
         )
 
+    async def get_digital_footprint(
+        self,
+        lead_id: int | str,
+        *,
+        params: Mapping[str, Any] | None = None,
+        headers: Mapping[str, str] | None = None,
+        timeout: float | None = None,
+    ) -> list[dict[str, Any]]:
+        return await self.get_contact_activity_events(
+            lead_id=lead_id,
+            params=params,
+            headers=headers,
+            timeout=timeout,
+            parse_only=False,
+            keep_raw=False,
+        )
+
     async def find_contacts_by_email(
         self,
         email: str,
@@ -281,6 +298,25 @@ class MauticClient:
             return None
         stage = contact.get("stage")
         return dict(stage) if isinstance(stage, Mapping) else None
+
+    async def save_recommendation(
+        self,
+        contact_id: int | str,
+        recommendation_text: str,
+        *,
+        field_alias: str | None = None,
+        headers: Mapping[str, str] | None = None,
+        timeout: float | None = None,
+    ) -> httpx.Response:
+        resolved_field_alias = (field_alias or self._settings.mautic_recommendation_field_alias).strip()
+        if not resolved_field_alias:
+            raise ValueError("Mautic recommendation field alias is not configured.")
+        return await self.update_contact(
+            contact_id,
+            json={resolved_field_alias: recommendation_text},
+            headers=headers,
+            timeout=timeout,
+        )
 
     async def get_emails(
         self,
