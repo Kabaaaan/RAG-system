@@ -39,6 +39,10 @@ class AppSettings(BaseSettings):
     mautic_api_url: str = Field(default="", validation_alias="MAUTIC_API_URL")
     mautic_user: str = Field(default="", validation_alias="MAUTIC_USER")
     mautic_password: str = Field(default="", validation_alias="MAUTIC_PASSWORD")
+    mautic_recommendation_field: str = Field(
+        default="recommendation",
+        validation_alias="MAUTIC_RECOMMENDATION_FIELD",
+    )
 
     nats_port: str = Field(default="4222", validation_alias="NATS_PORT")
     nats_monitor_port: str = Field(default="8222", validation_alias="NATS_MONITOR_PORT")
@@ -93,6 +97,10 @@ class AppSettings(BaseSettings):
     def mautic_api_password_value(self) -> str | None:
         password = self.mautic_password.strip()
         return password or None
+
+    @property
+    def mautic_recommendation_field_alias(self) -> str:
+        return self.mautic_recommendation_field.strip() or "recommendation"
 
     @property
     def api_auth_secret_value(self) -> str:
