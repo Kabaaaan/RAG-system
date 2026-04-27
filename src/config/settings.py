@@ -22,6 +22,10 @@ class AppSettings(BaseSettings):
     qdrant_port: int = Field(default=6333, validation_alias="QDRANT_PORT")
     qdrant_collection: str = Field(default="", validation_alias="QDRANT_COLLECTION")
 
+    redis_host: str = Field(default="localhost", validation_alias="REDIS_HOST")
+    redis_port: int = Field(default=6379, validation_alias="REDIS_PORT")
+    redis_db: int = Field(default=0, validation_alias="REDIS_DB")
+
     llm_api_url: str = Field(default="", validation_alias="LLM_API_URL")
     llm_api_key: str = Field(default="", validation_alias="LLM_API_KEY")
     llm_model: str = Field(default="", validation_alias="LLM_MODEL")
@@ -31,6 +35,23 @@ class AppSettings(BaseSettings):
     embedding_model_api_key: str = Field(default="", validation_alias="EMBEDDING_MODEL_API_KEY")
     embedding_model: str = Field(default="", validation_alias="EMBEDDING_MODEL")
     embedding_vector_size: int = Field(default=768, validation_alias="EMBEDDING_VECTOR_SIZE")
+
+    mautic_api_url: str = Field(default="", validation_alias="MAUTIC_API_URL")
+    mautic_user: str = Field(default="", validation_alias="MAUTIC_USER")
+    mautic_password: str = Field(default="", validation_alias="MAUTIC_PASSWORD")
+    mautic_recommendation_field: str = Field(
+        default="recommendation",
+        validation_alias="MAUTIC_RECOMMENDATION_FIELD",
+    )
+
+    nats_port: str = Field(default="4222", validation_alias="NATS_PORT")
+    nats_monitor_port: str = Field(default="8222", validation_alias="NATS_MONITOR_PORT")
+    nats_host: str = Field(default="", validation_alias="NATS_HOST")
+    nats_stream_name: str = Field(default="", validation_alias="NATS_STREAM_NAME")
+
+    api_auth_secret: str = Field(default="change-me", validation_alias="API_AUTH_SECRET")
+    api_jwt_algorithm: str = Field(default="HS256", validation_alias="API_JWT_ALGORITHM")
+    api_jwt_expiration_seconds: int = Field(default=2592000, validation_alias="API_JWT_EXPIRATION_SECONDS")
 
     api_timeout_seconds: float = Field(default=30.0, validation_alias="API_TIMEOUT_SECONDS")
 
@@ -62,6 +83,28 @@ class AppSettings(BaseSettings):
     @property
     def api_bearer_token(self) -> str | None:
         return self.llm_api_bearer_token
+
+    @property
+    def mautic_api_base_url(self) -> str:
+        return self.mautic_api_url.strip()
+
+    @property
+    def mautic_api_username(self) -> str | None:
+        username = self.mautic_user.strip()
+        return username or None
+
+    @property
+    def mautic_api_password_value(self) -> str | None:
+        password = self.mautic_password.strip()
+        return password or None
+
+    @property
+    def mautic_recommendation_field_alias(self) -> str:
+        return self.mautic_recommendation_field.strip() or "recommendation"
+
+    @property
+    def api_auth_secret_value(self) -> str:
+        return self.api_auth_secret.strip()
 
 
 @lru_cache(maxsize=1)

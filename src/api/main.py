@@ -2,11 +2,21 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 
+from src.api.auth import require_api_auth
 from src.api.exception_handlers import register_exception_handlers
-from src.api.routers import courses_router, db_router, recommendations_router, users_router
+from src.api.routers import (
+    auth_router,
+    mautic_router,
+    prompt_router,
+    recommendations_router,
+    staging_area_router,
+    system_router,
+    vector_db_router,
+)
 from src.config.settings import get_settings
 from src.utils import configure_logging
 
@@ -15,8 +25,16 @@ def create_app() -> FastAPI:
     settings = get_settings()
 
     @asynccontextmanager
-    async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        # from src.query_client.nats_client import nats_client
+        # try:
+        #     await nats_client.connect()
+        #     print("NATS клиент успешно подключён при старте API")
+        # except Exception as e:
+        #     print(f"Не удалось подключиться к NATS: {e}")
+
         configure_logging(settings.log_level)
+        app.state.started_at = datetime.now(UTC)
         yield
 
     app = FastAPI(
@@ -26,14 +44,13 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
-    @app.get("/health", tags=["health"])
-    def healthcheck() -> dict[str, str]:
-        return {"status": "ok"}
-
-    app.include_router(db_router)
-    app.include_router(courses_router)
-    app.include_router(users_router)
-    app.include_router(recommendations_router)
+    app.include_router(auth_router)
+    app.include_router(system_router)
+    app.include_router(prompt_router, dependencies=[Depends(require_api_auth)])
+    app.include_router(mautic_router, dependencies=[Depends(require_api_auth)])
+    app.include_router(staging_area_router, dependencies=[Depends(require_api_auth)])
+    app.include_router(recommendations_router, dependencies=[Depends(require_api_auth)])
+    app.include_router(vector_db_router, dependencies=[Depends(require_api_auth)])
 
     register_exception_handlers(app)
     return app

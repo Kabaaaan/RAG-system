@@ -1,97 +1,180 @@
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
 from typing import cast
 
 from sqlalchemy import Select, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
-from src.database.models import Course, Recommendation, User
+from src.database.models import RAGResource, Recommendation, RecommendationType, ResourceType
 
 
-class UserRepository:
+class ResourceTypeRepository:
     def __init__(self, session: Session) -> None:
         self._session = session
 
-    def create(self, *, login: str, digital_footprints: str = "") -> User:
-        user = User(login=login, digital_footprints=digital_footprints)
-        self._session.add(user)
+    def get_by_name(self, *, name: str) -> ResourceType | None:
+        statement: Select[tuple[ResourceType]] = select(ResourceType).where(ResourceType.name == name)
+        resource_type = self._session.scalar(statement)
+        return cast(ResourceType | None, resource_type)
+
+    def create(self, *, name: str) -> ResourceType:
+        resource_type = ResourceType(name=name)
+        self._session.add(resource_type)
         self._session.flush()
-        return user
+        return resource_type
 
-    def get_by_id(self, user_id: int) -> User | None:
-        return cast(User | None, self._session.get(User, user_id))
+    def get_or_create(self, *, name: str) -> ResourceType:
+        existing = self.get_by_name(name=name)
+        if existing is not None:
+            return existing
+        return self.create(name=name)
 
-    def get_by_login(self, login: str) -> User | None:
-        statement: Select[tuple[User]] = select(User).where(User.login == login)
-        return cast(User | None, self._session.execute(statement).scalar_one_or_none())
-
-    def list(self, *, limit: int = 100, offset: int = 0) -> list[User]:
-        statement: Select[tuple[User]] = select(User).order_by(User.id.asc()).limit(limit).offset(offset)
-        return list(self._session.scalars(statement).all())
-
-    def update_digital_footprints(self, *, user_id: int, digital_footprints: str) -> User | None:
-        user = self.get_by_id(user_id)
-        if user is None:
-            return None
-        user.digital_footprints = digital_footprints
-        self._session.flush()
-        return user
+    def get_all(self) -> list[ResourceType]:
+        statement: Select[tuple[ResourceType]] = select(ResourceType).order_by(ResourceType.name.asc())
+        result = self._session.scalars(statement).all()
+        return list(result)
 
 
-class CourseRepository:
+class ResourceRepository:
     def __init__(self, session: Session) -> None:
         self._session = session
+        self._resource_types = ResourceTypeRepository(session)
 
-    def create(self, *, name: str, description: str) -> Course:
-        course = Course(name=name, description=description)
-        self._session.add(course)
+    def add(
+        self,
+        *,
+        text: str,
+        resource_type_id: int | None = None,
+        resource_type_name: str | None = None,
+        title: str | None = None,
+        url: str | None = None,
+    ) -> RAGResource:
+        resolved_type_id = self._resolve_resource_type_id(
+            resource_type_id=resource_type_id,
+            resource_type_name=resource_type_name,
+        )
+        resource = RAGResource(
+            url=url,
+            type_id=resolved_type_id,
+            title=title,
+            text=text,
+        )
+        self._session.add(resource)
         self._session.flush()
-        return course
+        return resource
 
-    def get_by_id(self, course_id: int) -> Course | None:
-        return cast(Course | None, self._session.get(Course, course_id))
+    def get_by_id(self, *, resource_id: int) -> RAGResource | None:
+        statement: Select[tuple[RAGResource]] = (
+            select(RAGResource)
+            .options(joinedload(RAGResource.resource_type))
+            .where(RAGResource.id == resource_id)
+        )
+        resource = self._session.scalar(statement)
+        return cast(RAGResource | None, resource)
 
-    def get_by_name(self, name: str) -> Course | None:
-        statement: Select[tuple[Course]] = select(Course).where(Course.name == name)
-        return cast(Course | None, self._session.execute(statement).scalar_one_or_none())
-
-    def list(self, *, limit: int = 100, offset: int = 0) -> list[Course]:
-        statement: Select[tuple[Course]] = (
-            select(Course).order_by(Course.id.asc()).limit(limit).offset(offset)
+    def list(self, *, limit: int = 100) -> list[RAGResource]:
+        statement: Select[tuple[RAGResource]] = (
+            select(RAGResource)
+            .options(joinedload(RAGResource.resource_type))
+            .order_by(RAGResource.created_at.desc(), RAGResource.id.desc())
+            .limit(limit)
         )
         return list(self._session.scalars(statement).all())
 
-    def create_many_if_not_exists(self, courses: Sequence[Mapping[str, str]]) -> int:
-        created = 0
-        for course in courses:
-            name = course.get("name") or course.get("title") or ""
-            description = course.get("description") or ""
-            normalized_name = name.strip()
-            if not normalized_name:
-                continue
-            if self.get_by_name(normalized_name) is not None:
-                continue
-            self.create(name=normalized_name, description=description.strip())
-            created += 1
-        return created
+    def _resolve_resource_type_id(
+        self,
+        *,
+        resource_type_id: int | None,
+        resource_type_name: str | None,
+    ) -> int:
+        if resource_type_id is not None and resource_type_name is not None:
+            raise ValueError("Pass either resource_type_id or resource_type_name, not both.")
+        if resource_type_id is not None:
+            return resource_type_id
+        if resource_type_name is None:
+            raise ValueError("resource_type_id or resource_type_name is required.")
+        resource_type = self._resource_types.get_or_create(name=resource_type_name)
+        return cast(int, resource_type.id)
+
+
+class RecommendationTypeRepository:
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def get_by_name(self, *, name: str) -> RecommendationType | None:
+        statement: Select[tuple[RecommendationType]] = select(RecommendationType).where(
+            RecommendationType.name == name
+        )
+        recommendation_type = self._session.scalar(statement)
+        return cast(RecommendationType | None, recommendation_type)
+
+    def create(self, *, name: str) -> RecommendationType:
+        recommendation_type = RecommendationType(name=name)
+        self._session.add(recommendation_type)
+        self._session.flush()
+        return recommendation_type
+
+    def get_or_create(self, *, name: str) -> RecommendationType:
+        existing = self.get_by_name(name=name)
+        if existing is not None:
+            return existing
+        return self.create(name=name)
+
+    def get_all(self) -> list[RecommendationType]:
+        statement: Select[tuple[RecommendationType]] = select(RecommendationType).order_by(
+            RecommendationType.name.asc()
+        )
+        result = self._session.scalars(statement).all()
+        return list(result)
 
 
 class RecommendationRepository:
     def __init__(self, session: Session) -> None:
         self._session = session
+        self._recommendation_types = RecommendationTypeRepository(session)
 
-    def create(self, *, user_id: int, text: str) -> Recommendation:
-        recommendation = Recommendation(user_id=user_id, text=text)
+    def create(
+        self,
+        *,
+        lead_id: int,
+        text: str,
+        recommendation_type_id: int | None = None,
+        recommendation_type_name: str | None = None,
+    ) -> Recommendation:
+        resolved_type_id = self._resolve_recommendation_type_id(
+            recommendation_type_id=recommendation_type_id,
+            recommendation_type_name=recommendation_type_name,
+        )
+        recommendation = Recommendation(
+            lead_id=lead_id,
+            type_id=resolved_type_id,
+            text=text,
+        )
         self._session.add(recommendation)
         self._session.flush()
         return recommendation
 
-    def list_for_user(self, *, user_id: int, limit: int = 100) -> list[Recommendation]:
+    def list_for_lead(self, *, lead_id: int, limit: int = 100) -> list[Recommendation]:
         statement: Select[tuple[Recommendation]] = (
             select(Recommendation)
-            .where(Recommendation.user_id == user_id)
+            .options(joinedload(Recommendation.recommendation_type))
+            .where(Recommendation.lead_id == lead_id)
             .order_by(Recommendation.created_at.desc(), Recommendation.id.desc())
             .limit(limit)
         )
         return list(self._session.scalars(statement).all())
+
+    def _resolve_recommendation_type_id(
+        self,
+        *,
+        recommendation_type_id: int | None,
+        recommendation_type_name: str | None,
+    ) -> int:
+        if recommendation_type_id is not None and recommendation_type_name is not None:
+            raise ValueError("Pass either recommendation_type_id or recommendation_type_name, not both.")
+        if recommendation_type_id is not None:
+            return recommendation_type_id
+        if recommendation_type_name is None:
+            raise ValueError("recommendation_type_id or recommendation_type_name is required.")
+        recommendation_type = self._recommendation_types.get_or_create(name=recommendation_type_name)
+        return cast(int, recommendation_type.id)

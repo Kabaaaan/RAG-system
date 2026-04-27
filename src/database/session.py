@@ -5,7 +5,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Engine, create_engine
+from sqlalchemy import Engine, create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from src.database.models import Base
@@ -92,6 +92,8 @@ def create_tables(
     *, database_url: str | None = None, echo: bool = False, drop_existing: bool = False
 ) -> None:
     engine = get_engine(database_url=database_url, echo=echo)
+    with engine.begin() as connection:
+        connection.execute(text("CREATE EXTENSION IF NOT EXISTS pgcrypto;"))
     if drop_existing:
         Base.metadata.drop_all(engine)
     Base.metadata.create_all(engine)

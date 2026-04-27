@@ -1,172 +1,626 @@
-﻿# API
+# API Documentation
 
-## Обзор
+## Общая информация
 
-FastAPI слой для работы с пользователями, курсами, рекомендациями и сервисными операциями.
-Базовый URL при локальном запуске: `http://localhost:8000`.
+API предназначено для работы с RAG-системой: управлением рекомендациями, администрированием контента векторной базы данных и промежуточного хранилища (staging-area).
 
-## Запуск
+Все длительные операции (генерация рекомендаций, индексация ресурсов, обновление векторной БД) выполняются асинхронно через очередь сообщений.
 
-```bash
-python -m pip install -r requirements.txt -r requirements-dev.txt
-python -m src.api
-```
+### Авторизация
+- **API-key** — долгоживущий JWT-токен.
+- Получается один раз через `POST /auth/key` по секретному ключу (`secret`), который известен **только доверенным приложениям-интеграторам**.
+- Все эндпоинты (кроме `/auth/key`) требуют заголовок:
+  `Authorization: Bearer <api-key>`
 
-## Swagger / OpenAPI
+### Формат данных
+- **Content-Type:** `application/json`
+- **Кодировка:** UTF-8
 
-- Swagger UI: `http://localhost:8000/docs`
-- OpenAPI JSON: `http://localhost:8000/openapi.json`
+---
 
-## Эндпоинты
+## 1. Проверка здоровья системы
+### `GET /system/health`
 
-### Health
+Возвращает текущий статус всех компонентов RAG-системы.
 
-```http
-GET /health
-```
+**Особенности:**
+- Не требует авторизации (доступен публично для удобства инфраструктуры).
+- Возвращает `200 OK`, если всё здорово, или `503 Service Unavailable`, если есть проблемы.
 
-Ответ:
-```json
-{"status":"ok"}
-```
+### Response
 
-### DB
-
-```http
-POST /db/init
-```
-
-Тело запроса:
 ```json
 {
-  "drop_existing": false,
-  "courses_file": "data/courses.json",
-  "skip_courses_seed": false
+  "status": "healthy" | "unhealthy",
+  "timestamp": "date-time",
+  "components": {
+    "staging_area": {
+      "status": "ready" | "unhealthy",
+      "latency_ms": 12
+    },
+    "vector_db": {
+      "status": "ready" | "updating" | "unhealthy",
+      "latency_ms": 45
+    },
+    "queue": {
+      "status": "healthy" | "unhealthy",
+      "queue_depth": 7
+    },
+    "llm_service": {
+      "status": "available" | "unavailable",
+      "latency_ms": 320
+    },
+    "embedding_service": {
+      "status": "available" | "unavailable",
+      "latency_ms": 320
+    },
+    "redis": {
+      "status": "healthy" | "unhealthy",
+      "latency_ms": 320
+    }
+  },
+  "uptime_seconds": 86400
 }
 ```
 
-Ответ:
+### Возможные значения `status`
+
+| Значение     | Описание                                      |
+|--------------|-----------------------------------------------|
+| `healthy`    | Все компоненты работают нормально             |
+| `unhealthy`  | Один или несколько критичных компонентов недоступны |
+
+---
+
+## 2. Получение api-ключа
+### `POST /auth/key`
+
+Получение api-ключа для доступа к остальным эндпоинтам.
+
+### Request Body
 ```json
 {
-  "courses_seeded": 0,
-  "courses_count": 0,
-  "chunks_count": 0,
-  "collection_recreated": false
+  "secret": "string"
 }
 ```
 
-### Courses
+### Params
 
-```http
-POST /courses/seed
-```
+| Поле   | Тип    | Обязательное | Описание                   |
+|--------|--------|--------------|----------------------------|
+| secret | string | да           | Секрет для получения ключа |
 
-Тело запроса:
-```json
-{"file_path":"data/courses.json"}
-```
-
-Ответ:
-```json
-{"inserted":0}
-```
-
-```http
-GET /courses
-```
-
-Ответ:
-```json
-[
-  {"id":1,"name":"Course name","description":"..."}
-]
-```
-
-### Users
-
-```http
-POST /users
-```
-
-Тело запроса:
-```json
-{"login":"roman","digital_footprints":"{\"events\":[]}"}
-```
-
-Ответ:
-```json
-{"id":1,"login":"roman","updated_at":"2026-02-16T20:00:00+00:00"}
-```
-
-```http
-GET /users
-```
-
-Ответ:
-```json
-[
-  {"id":1,"login":"roman","updated_at":"2026-02-16T20:00:00+00:00"}
-]
-```
-
-```http
-POST /users/seed
-```
-
-Тело запроса:
-```json
-{"file_path":"data/digital-footprints.json"}
-```
-
-Ответ:
-```json
-{"created":0,"updated":0,"skipped":0}
-```
-
-### Recommendations
-
-```http
-POST /recommendations
-```
-
-Тело запроса:
-```json
-{"login":"roman","text":"Начните с курса по Python"}
-```
-
-Ответ:
-```json
-{"id":1,"text":"...","created_at":"2026-02-16T20:00:00+00:00"}
-```
-
-```http
-GET /recommendations/{login}
-```
-
-Ответ:
-```json
-[
-  {"id":1,"text":"...","created_at":"2026-02-16T20:00:00+00:00"}
-]
-```
-
-```http
-POST /recommendations/generate
-```
-
-Тело запроса:
-```json
-{"login":"alex_dev","top_k":5,"search_k":20}
-```
-
-Ответ:
+### Response
 ```json
 {
-  "recommendation": {"id":1,"text":"...","created_at":"2026-02-16T20:00:00+00:00"},
-  "debug_file_path": "data/recs/20260216T000000Z_alex_dev.json",
-  "query_text": "query: ...",
-  "retrieved_courses": [
-    {"course_id":1,"name":"...","description":"...","score":0.9}
+  "api-key": "string"
+}
+```
+
+### Описание статусов
+* `queued` — задача поставлена в очередь
+
+---
+
+
+## 3. Добавление типа ресурса для RAG
+### `POST /staging-area/resorces/type`
+
+Добавляет новый тип ресурса для использования в RAG-системе.
+
+### Request Body
+```json
+{
+  "name": "string"
+}
+```
+
+### Params
+
+| Поле | Тип    | Обязательное | Описание         |
+|------|--------|--------------|------------------|
+| name | string | да           | Название типа ресурса |
+
+### Response
+```json
+{
+  "id": "int",
+  "name": "string"
+}
+```
+
+---
+
+## 4. Получение списка типов ресурсов
+### `GET /staging-area/resorces/type`
+
+Возвращает список доступных типов ресурсов для RAG-системы.
+
+### Response
+```json
+{
+  "resource_types": [
+    {
+      "id": "int",
+      "name": "string"
+    }
   ]
+}
+```
+
+---
+
+## 5. Добавление типа рекомендации
+### `POST /staging-area/recommendations/type`
+
+Добавляет новый тип рекомендации для дальнейшей генерации и сохранения.
+
+### Request Body
+```json
+{
+  "name": "string"
+}
+```
+
+### Params
+
+| Поле | Тип    | Обязательное | Описание                |
+|------|--------|--------------|-------------------------|
+| name | string | да           | Название типа рекомендации |
+
+### Response
+```json
+{
+  "id": "int",
+  "name": "string"
+}
+```
+
+---
+
+## 6. Получение списка типов рекомендаций
+### `GET /staging-area/recommendations/type`
+
+Возвращает список доступных типов рекомендаций для генерации.
+
+### Response
+```json
+{
+  "recommendation_types": [
+    {
+      "id": "int",
+      "name": "string"
+    }
+  ]
+}
+```
+
+---
+
+## 7. Индексация ресурса в промежуточном хранилище
+### `POST /staging-area`
+
+Индексация (добавление) ресурса в промежуточное хранилище. Ресурсы в DataLake только добавляются, обновление и удаление не поддерживаются. Ресурс проиндексируется в хранилище и сразу же будет создана задача на индексацию ресурса в векторной БД.
+
+### Request Body
+```json
+{
+  "resource_type": "string",
+  "text": "string",
+  "url": "string" | None,
+  "title": "string" | None
+}
+```
+
+### Params
+
+| Поле          | Тип    | Обязательное | Описание                  |
+|---------------|--------|--------------|---------------------------|
+| resource_type | string | да           | Тип ресурса               |
+| text          | string | да           | Содержимое ресурса        |
+| url           | string | нет          | URL ресурса               |
+| title         | string | нет          | Название ресурса          |
+
+### Response
+```json
+{
+  "resource_id": "int",
+  "status": "queued"
+}
+```
+
+### Описание статусов
+* `queued` — задача поставлена в очередь (создана в БД, но пока не проиндексирована в Qdrant)
+
+### Возможная ошибка
+`409 Conflict` — в `staging-area` уже существует запись с таким же значением поля `text`. Дубликат определяется по автоматически вычисляемому SHA-256 хэшу.
+
+---
+
+## 8. Получение ресурса из промежуточного хранилища
+### `GET /staging-area/{resource_id}`
+
+Получить ресурс из промежуточного хранилища по его идентификатору.
+
+### Path Params
+
+| Параметр    | Тип    | Обязательное | Описание              |
+|-------------|--------|--------------|-----------------------|
+| resource_id | int    | да           | Идентификатор ресурса |
+
+### Response
+```json
+{
+  "resource_id": "int",
+  "resource_type": "string",
+  "data": {}
+}
+```
+
+---
+
+## 9. Импорт email из Mautic в промежуточное хранилище
+### `POST /staging-area/email`
+
+Импортирует email-рассылки из Mautic в `staging-area`.
+
+Если запрос вызван без параметров, система получает все email из Mautic и добавляет в `staging-area` только те, которых там ещё нет.
+
+Если передан параметр `id`, система получает конкретный email из Mautic по идентификатору и добавляет его в `staging-area`, только если он там отсутствует.
+
+### Request Body
+```json
+{
+  "id": "int"
+}
+```
+
+### Params
+
+| Поле | Тип | Обязательное | Описание |
+|------|-----|--------------|----------|
+| id   | int | нет          | Идентификатор email в Mautic |
+
+### Response
+
+Если импортировался один email:
+```json
+{
+  "status": "created" | "already_exists" | "not_found"
+}
+```
+
+Если выполнялся массовый импорт:
+```json
+{
+  "status": "created",
+  "count": "int"
+}
+```
+
+### Возможные статусы
+* `created` — email успешно добавлен в `staging-area`
+* `already_exists` — email с таким же текстом уже присутствует в `staging-area`
+* `not_found` — email с указанным идентификатором не найден в Mautic
+
+---
+
+## 10. Полное обновление векторной БД
+### `POST /vector-db/rebuild`
+
+> Неактуальный эндпоинт.
+>
+> На текущем этапе разработки `POST /vector-db/rebuild` не используется и не должен вызываться клиентами.
+> Полное обновление векторной БД через API не поддерживается.
+
+### Request Body
+```json
+{}
+```
+
+### Response
+```json
+{
+  "operation_id": "string",
+  "status": "queued"
+}
+```
+
+---
+
+## 11. Статус векторной БД
+### `GET /vector-db/status`
+
+Позволяет узнать текущее состояние векторной базы. Статус определяется по наличию активных задач индексации в Redis.
+
+### Response
+```json
+{
+  "status": "string"
+}
+```
+
+### Возможные статусы
+* `updating` — в Redis есть задачи индексации со статусом `queued` или `processing`
+* `ready` — актуальна и доступна
+
+---
+
+## 12. Статус ресурса в векторной БД
+### `GET /vector-db/resource-status/{resource_id}`
+
+Позволяет узнать, индексирован ли ресурс в векторной БД. Если передан `create_embedding=True`, то в случае отсутствия ресурса в Qdrant, он будет проиндексирован (async задача). 
+
+### Query Params
+
+| Параметр      | Тип    | Обязательный | Описание    |
+|---------------|--------|--------------|-------------|
+| resource_id   | int    | да           | ID ресурса  |
+| create_embedding   | boolean   | нет (по умолчанию False)           | Флаг создания ресурса |
+
+### Response
+```json
+{
+  "status": "string"
+}
+```
+
+### Возможные статусы
+* `not_found` — отсутствует в векторной БД
+* `processing` — в процессе создания
+* `created` — успешно добавлен
+* `queued` — задача индексации поставлена в очередь 
+
+---
+
+## 13. Генерация рекомендации
+### `POST /recommendations/generate`
+
+Создает задачу на генерацию рекомендации для пользователя. В случае, если поле "type" не передается в запросе, то система самостоятельно определяет положение лида в воронке продаж, используя Mautic API.
+
+### Request Body
+```json
+{
+  "lead_id": "string",
+  "type": "string"
+}
+```
+
+### Params
+
+| Поле    | Тип    | Обязательное | Описание                       |
+|---------|--------|--------------|--------------------------------|
+| lead_id | string | да           | Идентификатор пользователя     |
+| type    | string | Нет          | Тип рекомендации (расширяемый) |
+
+### Response
+```json
+{
+  "token": "string",
+  "status": "queued"
+}
+```
+
+### Описание статусов
+* `queued` — задача поставлена в очередь
+
+---
+
+## 14. Получение статуса рекомендации
+### `GET /recommendations/status/{token}`
+
+Позволяет отслеживать состояние генерации рекомендации.
+
+### Query Params
+
+| Параметр | Тип    | Обязательный | Описание           |
+|----------|--------|--------------|--------------------|
+| token    | string | да           | Токен рекомендации |
+
+### Response
+```json
+{
+  "status": "string"
+}
+```
+
+### Возможные статусы
+* `queued` — в очереди
+* `processing` — генерируется
+* `completed` — сохранена в БД
+* `failed` — ошибка генерации
+
+---
+
+## 15. Получение рекомендации пользователя
+### `GET /recommendations/{lead_id}`
+
+Возвращает сохранённую рекомендацию для пользователя.
+
+### Query Params
+
+| Параметр | Тип    | Обязательный | Описание                   |
+|----------|--------|--------------|----------------------------|
+| lead_id  | string | да           | Идентификатор пользователя |
+
+### Response
+```json
+{
+  "lead_id": "string",
+  "recommendations": [
+    {
+      "id": "string",
+      "type": "string",
+      "data": {}
+    }
+  ]
+}
+```
+
+
+## 16. Получение промпта 
+### `GET /prompt`
+
+Возвращает промпт, связанный с указанной стадией воронки. Идентификатор стадии воронки соответствует типу рекомендации.
+
+### Query Params
+
+| Параметр | Тип | Обязательный | Описание |
+|----------|-----|--------------|----------|
+| lead_type       | string | да           | Тип рекомендации |
+
+### Response
+```json
+{
+  "lead_type": "string",
+  "prompt": "string"
+}
+```
+
+### lead_type
+* `cold` 
+* `warm` 
+* `hot`
+* `after_sale` 
+
+## 17. Изменение промпта 
+### `PUT /prompt` 
+
+Полностью обновляет промпт, связанный с указанной стадией воронки. 
+
+### Request Body
+```json
+{
+  "lead_type": "string",
+  "prompt": "string"
+}
+```
+
+### Params
+
+| Поле   | Тип    | Обязательное | Описание |
+|--------|--------|--------------|----------|
+| lead_type     | string    | да           | Тип рекомендации |
+| prompt | string | да           | Новый текст промпта |
+
+### Response
+```json
+{
+  "lead_type": "string",
+  "prompt": "string"
+}
+```
+
+### lead_type
+* `cold` 
+* `warm` 
+* `hot`
+* `after_sale` 
+
+## 18. Получение цифровых следов пользователя
+### `GET /recommendations/actions/{lead_id}` 
+
+Возвращает цифровые следы пользователя по его идентификатору.
+
+### Path Params
+
+| Параметр | Тип    | Обязательное | Описание                   |
+|----------|--------|--------------|----------------------------|
+| lead_id  | string | да           | Идентификатор пользователя |
+
+### Response
+```json
+{
+  "lead_id": "string",
+  "actions": [
+    {
+      "id": "string",
+      "type": "string",
+      "data": {}
+    }
+  ]
+}
+```
+
+## 19. Получение данных о задачах генерации
+### `GET /recommendations/tasks/{lead_id}` 
+
+Возвращает все задачи генерации рекомендаций пользователя, сохранённые в Redis за последние 24 часа.
+
+### Path Params
+
+| Параметр | Тип    | Обязательное | Описание                   |
+|----------|--------|--------------|----------------------------|
+| lead_id  | string | да           | Идентификатор пользователя |
+
+### Response
+```json
+{
+  "lead_id": "string",
+  "tasks": [
+    {
+      "id": "string",
+      "status": "string",
+      "type": "string",
+      "created_at": "date-time",
+      "updated_at": "date-time"
+    }
+  ]
+}
+```
+
+### Возможные статусы
+* `queued` — задача поставлена в очередь
+* `processing` — задача находится в обработке
+* `completed` — задача успешно завершена
+* `failed` — задача завершилась с ошибкой
+
+
+## 20. Создание поля для всех контактов в Mautic
+### `POST /mautic/field`
+
+Создает новое поле для всех контактов в Mautic, на выход требует только название поля. 
+
+### Request Body
+```json
+{
+  "name": "string"
+}
+```
+
+
+### Response
+```json
+{
+  "id": "int | null",
+  "name": "string",
+  "alias": "string",
+  "type": "text",
+  "object": "lead"
+}
+```
+
+
+## 21. Заполнение поля для контакта в Mautic
+### `PATCH /mautic/field`
+
+Заполняет поле для контакта в Mautic, на выход требует lead_id, название поля и новое значение. 
+
+### Request Body
+```json
+{
+  "lead_id": "string",
+  "field": "string",
+  "value": "any"
+}
+```
+
+### Response
+```json
+{
+  "lead_id": "string",
+  "field": "string",
+  "value": "any",
+  "status": "updated"
 }
 ```
