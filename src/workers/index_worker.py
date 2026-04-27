@@ -1,5 +1,6 @@
 import asyncio
 import json
+import uuid
 
 from src.api_client import ApiClient
 from src.config.settings import get_settings
@@ -56,7 +57,7 @@ async def index_handler(msg):
                 )
                 points.append(
                     PointData(
-                        point_id=f"{resource.resource_id}:{chunk_index}",
+                        point_id=str(uuid.uuid4()),
                         vector=vector,
                         payload={
                             "resource_id": resource.resource_id,
@@ -86,7 +87,5 @@ async def index_handler(msg):
 
 async def run():
     await nats_client.connect()
-    await nats_client.subscribe(
-        subject="tasks.rag.index", durable="index-worker", handler=index_handler, max_ack_pending=1
-    )
+    await nats_client.subscribe(subject="tasks.rag.index", durable="index-worker", handler=index_handler, max_ack_pending=1)
     await asyncio.Future()
