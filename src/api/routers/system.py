@@ -99,9 +99,7 @@ async def system_healthcheck_endpoint(request: Request, response: Response) -> S
     probe_timeout = _health_probe_timeout_seconds(settings)
     components = await asyncio.gather(
         _measure_component(_probe_staging_area, fallback_status="unhealthy", timeout_seconds=probe_timeout),
-        _measure_component(
-            lambda: _probe_vector_db(settings), fallback_status="unhealthy", timeout_seconds=probe_timeout
-        ),
+        _measure_component(lambda: _probe_vector_db(settings), fallback_status="unhealthy", timeout_seconds=probe_timeout),
         _measure_component(
             lambda: _probe_queue(settings),
             fallback_status="unhealthy",

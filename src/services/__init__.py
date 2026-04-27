@@ -9,10 +9,13 @@ from src.services.db import init_db
 from src.services.errors import ServiceError
 from src.services.indexing import ResourceIndexingService
 from src.services.recommendations import (
+    GeneratedRecommendationRecord,
     LeadActionsRecord,
     LeadRecommendationsRecord,
+    RecommendationGenerationService,
     RecommendationItemRecord,
     RecommendationsQueryService,
+    RetrievedResourceRecord,
 )
 from src.services.staging_area import ImportedEmailResult, StagingAreaResourceRecord, StagingAreaService
 
@@ -77,14 +80,17 @@ def generate_recommendation(
 __all__ = [
     "GeneratedRecommendation",
     "CatalogService",
+    "GeneratedRecommendationRecord",
     "ImportedEmailResult",
     "LeadActionsRecord",
     "LeadRecommendationsRecord",
     "NamedCatalogRecord",
     "ResourceIndexingService",
+    "RecommendationGenerationService",
     "RecommendationRecord",
     "RecommendationItemRecord",
     "RecommendationsQueryService",
+    "RetrievedResourceRecord",
     "RetrievedCourseRecord",
     "StagingAreaResourceRecord",
     "StagingAreaService",
