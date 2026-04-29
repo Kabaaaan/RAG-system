@@ -38,6 +38,10 @@ async def index_courses_in_vector_db(
                     settings=settings,
                 )
                 payload = {
+                    "resource_id": course.id,
+                    "resource_type": "course",
+                    "title": course.name,
+                    "url": None,
                     "course_id": course.id,
                     "course_name": course.name,
                     "course_description": course.description,
