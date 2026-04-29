@@ -43,6 +43,10 @@ class AppSettings(BaseSettings):
         default="recommendation",
         validation_alias="MAUTIC_RECOMMENDATION_FIELD",
     )
+    mautic_recommendation_max_length: int = Field(
+        default=500,
+        validation_alias="MAUTIC_RECOMMENDATION_MAX_LENGTH",
+    )
 
     nats_port: str = Field(default="4222", validation_alias="NATS_PORT")
     nats_monitor_port: str = Field(default="8222", validation_alias="NATS_MONITOR_PORT")
