@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
 
+import httpx
 from qdrant_client.http.models.models import FieldCondition, Filter, MatchValue
 
 from src.api_client import ApiClient
@@ -17,6 +18,7 @@ from src.query_client import RAGTasksClient
 from src.rag_core.embeddings import fetch_embedding
 from src.rag_core.llm import generate_llm_response
 from src.services.errors import TaskStateNotFoundError, ValidationError
+from src.services.recommendation_audit import RecommendationAuditLog
 from src.task_storage import RedisClient
 from src.vector_db import QdrantVectorClient
 
@@ -70,6 +72,7 @@ class GeneratedRecommendationRecord:
     recommendation_payload: dict[str, object]
     recommendation_text: str
     recommendation_id: int
+    audit_log_path: str | None = None
 
 
 class RecommendationsQueryService:
@@ -213,70 +216,136 @@ class RecommendationGenerationService:
         recommendation_type: str | None = None,
     ) -> GeneratedRecommendationRecord:
         normalized_lead_id = self._parse_lead_id(lead_id)
+        task_created_at = await self._get_task_created_at(task_id=task_id)
+        audit = RecommendationAuditLog(
+            task_id=task_id,
+            lead_id=normalized_lead_id,
+            recommendation_type=recommendation_type,
+            base_dir=self._settings.recommendation_audit_log_dir,
+            task_created_at=task_created_at,
+        )
+        audit.step(
+            "generation_started",
+            lead_id=str(normalized_lead_id),
+            requested_type=recommendation_type,
+        )
 
-        async with MauticClient(settings=self._settings) as mautic_client:
-            resolved_type = self._normalize_recommendation_type(recommendation_type, allow_empty=True)
-            if resolved_type is None:
-                resolved_type = await self._resolve_recommendation_type(mautic_client, lead_id=normalized_lead_id)
+        try:
+            async with MauticClient(settings=self._settings) as mautic_client:
+                audit.step("mautic_client_opened")
+                resolved_type = self._normalize_recommendation_type(recommendation_type, allow_empty=True)
+                if resolved_type is None:
+                    resolved_type = await self._resolve_recommendation_type(mautic_client, lead_id=normalized_lead_id)
+                audit.step("recommendation_type_resolved", recommendation_type=resolved_type)
 
-            digital_footprints = await mautic_client.get_digital_footprint(normalized_lead_id)
-            query_text = self._format_digital_footprints(digital_footprints)
-            retrieved_resources = await self._retrieve_resources(
-                query_text=query_text,
-                recommendation_type=resolved_type,
-            )
-            prompt_text = self._render_prompt(
-                recommendation_type=resolved_type,
-                available_content=self._format_available_content(retrieved_resources),
-                digital_traces=query_text,
-            )
-            raw_llm_text, _ = await generate_llm_response(settings=self._settings, prompt=prompt_text)
-            recommendation_payload = self._parse_recommendation_payload(raw_llm_text)
-            stored_payload = {
-                **recommendation_payload,
-                "_system": {
-                    "task_id": task_id,
-                    "lead_id": str(normalized_lead_id),
-                    "type": resolved_type,
-                },
-            }
-
-            recommendation_text = str(recommendation_payload.get("recommendation") or raw_llm_text).strip()
-            if not recommendation_text:
-                raise ValueError("Generated recommendation does not contain a user-facing message.")
-
-            existing_recommendation_id = self._find_existing_recommendation_id(
-                lead_id=normalized_lead_id,
-                task_id=task_id,
-            )
-            if existing_recommendation_id is not None:
-                return GeneratedRecommendationRecord(
-                    task_id=task_id,
-                    lead_id=normalized_lead_id,
-                    recommendation_type=resolved_type,
-                    prompt_text=prompt_text,
+                digital_footprints = await mautic_client.get_digital_footprint(normalized_lead_id)
+                audit.step(
+                    "digital_footprints_loaded",
+                    events_count=len(digital_footprints),
+                    events=digital_footprints[:25],
+                )
+                query_text = self._format_digital_footprints(digital_footprints)
+                audit.step("embedding_query_built", query_text=query_text, query_length=len(query_text))
+                retrieved_resources = await self._retrieve_resources(
                     query_text=query_text,
-                    retrieved_resources=retrieved_resources,
-                    recommendation_payload=stored_payload,
+                    recommendation_type=resolved_type,
+                    audit=audit,
+                )
+                available_content = self._format_available_content(retrieved_resources)
+                prompt_text = self._render_prompt(
+                    recommendation_type=resolved_type,
+                    available_content=available_content,
+                    digital_traces=query_text,
+                )
+                audit.step(
+                    "prompt_rendered",
+                    prompt_text=prompt_text,
+                    prompt_length=len(prompt_text),
+                    available_content=available_content,
+                )
+                raw_llm_text, llm_response_payload = await generate_llm_response(
+                    settings=self._settings,
+                    prompt=prompt_text,
+                )
+                audit.step(
+                    "llm_response_received",
+                    raw_llm_text=raw_llm_text,
+                    raw_llm_text_length=len(raw_llm_text),
+                    response_payload=llm_response_payload,
+                )
+                recommendation_payload = self._parse_recommendation_payload(raw_llm_text)
+                audit.step("recommendation_payload_parsed", payload=recommendation_payload)
+                stored_payload = {
+                    **recommendation_payload,
+                    "_system": {
+                        "task_id": task_id,
+                        "lead_id": str(normalized_lead_id),
+                        "type": resolved_type,
+                    },
+                }
+
+                recommendation_text = str(recommendation_payload.get("recommendation") or raw_llm_text).strip()
+                if not recommendation_text:
+                    raise ValueError("Generated recommendation does not contain a user-facing message.")
+                audit.step(
+                    "recommendation_text_extracted",
                     recommendation_text=recommendation_text,
-                    recommendation_id=existing_recommendation_id,
+                    length=len(recommendation_text),
                 )
 
-            await mautic_client.save_recommendation(
-                normalized_lead_id,
-                self._prepare_recommendation_for_mautic(recommendation_text),
-                field_alias=self._settings.mautic_recommendation_field_alias,
-            )
+                existing_recommendation_id = self._find_existing_recommendation_id(
+                    lead_id=normalized_lead_id,
+                    task_id=task_id,
+                )
+                if existing_recommendation_id is not None:
+                    audit.finish(
+                        status="already_completed",
+                        recommendation_id=existing_recommendation_id,
+                        audit_log_path=str(audit.path),
+                    )
+                    return GeneratedRecommendationRecord(
+                        task_id=task_id,
+                        lead_id=normalized_lead_id,
+                        recommendation_type=resolved_type,
+                        prompt_text=prompt_text,
+                        query_text=query_text,
+                        retrieved_resources=retrieved_resources,
+                        recommendation_payload=stored_payload,
+                        recommendation_text=recommendation_text,
+                        recommendation_id=existing_recommendation_id,
+                        audit_log_path=str(audit.path),
+                    )
 
-        serialized_payload = json.dumps(stored_payload, ensure_ascii=False)
-        with session_scope() as session:
-            repository = RecommendationRepository(session)
-            created = repository.create(
-                lead_id=normalized_lead_id,
-                text=serialized_payload,
-                recommendation_type_name=resolved_type,
+                mautic_text = await self._save_recommendation_to_mautic(
+                    mautic_client=mautic_client,
+                    lead_id=normalized_lead_id,
+                    recommendation_text=recommendation_text,
+                    audit=audit,
+                )
+
+            serialized_payload = json.dumps(stored_payload, ensure_ascii=False)
+            with session_scope() as session:
+                repository = RecommendationRepository(session)
+                created = repository.create(
+                    lead_id=normalized_lead_id,
+                    text=serialized_payload,
+                    recommendation_type_name=resolved_type,
+                )
+                recommendation_id = int(created.id)
+            audit.finish(
+                status="completed",
+                recommendation_id=recommendation_id,
+                mautic_text=mautic_text,
+                audit_log_path=str(audit.path),
             )
-            recommendation_id = int(created.id)
+        except Exception as exc:
+            audit.finish(
+                status="failed",
+                error_type=type(exc).__name__,
+                error=str(exc),
+                audit_log_path=str(audit.path),
+            )
+            raise
 
         return GeneratedRecommendationRecord(
             task_id=task_id,
@@ -288,14 +357,96 @@ class RecommendationGenerationService:
             recommendation_payload=stored_payload,
             recommendation_text=recommendation_text,
             recommendation_id=recommendation_id,
+            audit_log_path=str(audit.path),
         )
 
-    async def _retrieve_resources(self, *, query_text: str, recommendation_type: str) -> list[RetrievedResourceRecord]:
+    async def _get_task_created_at(self, *, task_id: str) -> str | None:
+        try:
+            record = await self.get_status(task_id=task_id)
+        except Exception:
+            return None
+        if not isinstance(record, dict):
+            return None
+        created_at = record.get("created_at")
+        return created_at if isinstance(created_at, str) and created_at.strip() else None
+
+    async def _save_recommendation_to_mautic(
+        self,
+        *,
+        mautic_client: MauticClient,
+        lead_id: int,
+        recommendation_text: str,
+        audit: RecommendationAuditLog,
+    ) -> str:
+        candidates = self._build_mautic_recommendation_candidates(recommendation_text)
+        last_error: httpx.HTTPStatusError | None = None
+        for attempt, candidate in enumerate(candidates, start=1):
+            audit.step(
+                "mautic_save_attempt",
+                attempt=attempt,
+                field_alias=self._settings.mautic_recommendation_field_alias,
+                text=candidate,
+                text_length=len(candidate),
+            )
+            try:
+                await mautic_client.save_recommendation(
+                    lead_id,
+                    candidate,
+                    field_alias=self._settings.mautic_recommendation_field_alias,
+                )
+            except httpx.HTTPStatusError as exc:
+                last_error = exc
+                response_text = exc.response.text[:2000] if exc.response is not None else ""
+                audit.step(
+                    "mautic_save_failed",
+                    attempt=attempt,
+                    status_code=exc.response.status_code if exc.response is not None else None,
+                    response_text=response_text,
+                )
+                if exc.response is None or exc.response.status_code != 422:
+                    raise
+                continue
+
+            audit.step("mautic_save_succeeded", attempt=attempt, text_length=len(candidate))
+            return candidate
+
+        if last_error is not None:
+            raise last_error
+        raise ValueError("No Mautic recommendation text candidates were generated.")
+
+    def _build_mautic_recommendation_candidates(self, recommendation_text: str) -> list[str]:
+        base_limit = max(int(self._settings.mautic_recommendation_max_length), 0)
+        limits = [base_limit] if base_limit else [0]
+        for fallback_limit in (190, 120, 80):
+            if fallback_limit not in limits:
+                limits.append(fallback_limit)
+
+        candidates: list[str] = []
+        for limit in limits:
+            candidate = self._prepare_recommendation_for_mautic(recommendation_text, max_length=limit)
+            if candidate and candidate not in candidates:
+                candidates.append(candidate)
+        return candidates
+
+    async def _retrieve_resources(
+        self,
+        *,
+        query_text: str,
+        recommendation_type: str,
+        audit: RecommendationAuditLog | None = None,
+    ) -> list[RetrievedResourceRecord]:
         async with ApiClient.for_embeddings(settings=self._settings) as embedding_client:
             query_vector = await fetch_embedding(
                 client=embedding_client,
                 text=f"query: {query_text}",
                 settings=self._settings,
+            )
+        if audit is not None:
+            audit.step(
+                "embedding_created",
+                query_text=f"query: {query_text}",
+                vector_size=len(query_vector),
+                vector_preview=query_vector[:8],
             )
 
         resource_type = self._resource_type_for_recommendation(recommendation_type)
@@ -309,6 +460,20 @@ class RecommendationGenerationService:
                     query_filter=query_filter,
                     k=RECOMMENDATION_SEARCH_K,
                 )
+        if audit is not None:
+            audit.step(
+                "qdrant_search_completed",
+                search_k=RECOMMENDATION_SEARCH_K,
+                resource_type_filter=resource_type,
+                raw_results_count=len(scored_points),
+                raw_results=[
+                    {
+                        "score": float(point.score or 0.0),
+                        "payload": point.payload if isinstance(point.payload, dict) else {},
+                    }
+                    for point in scored_points
+                ],
+            )
 
         resources: dict[int, RetrievedResourceRecord] = {}
         for point in scored_points:
@@ -337,6 +502,22 @@ class RecommendationGenerationService:
         retrieved_resources = sorted(resources.values(), key=lambda item: item.score, reverse=True)[:RECOMMENDATION_TOP_K]
         if not retrieved_resources:
             raise ValueError("No similar resources were found in Qdrant for the provided digital footprint.")
+        if audit is not None:
+            audit.step(
+                "resources_selected",
+                top_k=RECOMMENDATION_TOP_K,
+                resources=[
+                    {
+                        "resource_id": resource.resource_id,
+                        "resource_type": resource.resource_type,
+                        "title": resource.title,
+                        "url": resource.url,
+                        "score": resource.score,
+                        "chunk_text": resource.chunk_text,
+                    }
+                    for resource in retrieved_resources
+                ],
+            )
         return retrieved_resources
 
     @staticmethod
@@ -395,8 +576,9 @@ class RecommendationGenerationService:
     def _format_digital_footprints(events: list[dict[str, object]]) -> str:
         return build_digital_footprint_profile_text(events)
 
-    def _prepare_recommendation_for_mautic(self, recommendation_text: str) -> str:
-        max_length = max(int(self._settings.mautic_recommendation_max_length), 0)
+    def _prepare_recommendation_for_mautic(self, recommendation_text: str, *, max_length: int | None = None) -> str:
+        resolved_max_length = self._settings.mautic_recommendation_max_length if max_length is None else max_length
+        max_length = max(int(resolved_max_length), 0)
         normalized = " ".join(recommendation_text.split())
         if max_length == 0 or len(normalized) <= max_length:
             return normalized
@@ -406,7 +588,7 @@ class RecommendationGenerationService:
         last_space = shortened.rfind(" ")
         if last_space >= max_length // 2:
             shortened = shortened[:last_space].rstrip()
-        return shortened + "…"
+        return shortened + "..."
 
     @staticmethod
     def _format_available_content(resources: list[RetrievedResourceRecord]) -> str:

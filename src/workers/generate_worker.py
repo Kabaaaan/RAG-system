@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any
 
 from src.config.settings import get_settings
@@ -32,6 +33,28 @@ class GenerateTaskMessage:
 
 class PermanentMessageError(ValueError):
     """Raised when a NATS message is malformed and must not be retried."""
+
+
+def _duration_from_task_created(task_state: dict[str, object] | None) -> float | None:
+    if not isinstance(task_state, dict):
+        return None
+    created_at = task_state.get("created_at")
+    if not isinstance(created_at, str) or not created_at.strip():
+        return None
+    try:
+        created = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return round((datetime.now(UTC) - created).total_seconds(), 3)
+
+
+async def _get_task_state_best_effort(task_id: str) -> dict[str, object] | None:
+    try:
+        state = await recommendation_generation_service.get_status(task_id=task_id)
+    except Exception:
+        logger.exception("Could not read generate task state", extra={"task_id": task_id})
+        return None
+    return state if isinstance(state, dict) else None
 
 
 def _parse_message(raw: str) -> GenerateTaskMessage:
@@ -176,12 +199,23 @@ async def generate_handler(msg: Any) -> None:
         return
 
     await msg.ack()
+    task_state = await _get_task_state_best_effort(task.task_id)
+    duration_from_api = _duration_from_task_created(task_state)
+    audit_log_path = getattr(generated, "audit_log_path", None)
+    if duration_from_api is not None:
+        logger.info(
+            "Generate task completed in %.3f seconds from API request; audit_log=%s",
+            duration_from_api,
+            audit_log_path or "n/a",
+        )
     logger.info(
         "Generate task completed",
         extra={
             "task_id": task.task_id,
             "lead_id": task.lead_id,
             "recommendation_id": generated.recommendation_id,
+            "duration_from_api_request_seconds": duration_from_api,
+            "audit_log_path": audit_log_path,
         },
     )
 
