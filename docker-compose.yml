@@ -1,4 +1,44 @@
-﻿services:
+services:
+    api:
+        image: python:3.12-slim
+        working_dir: /app
+        env_file:
+            - .env
+        environment:
+            POSTGRES_HOST: postgresql
+            QDRANT_HOST: qdrant
+            REDIS_HOST: redis
+            NATS_HOST: nats
+        command: sh -c "pip install --no-cache-dir -r requirements.txt && python -m src.api"
+        ports:
+            - "${API_PORT:-8000}:8000"
+        volumes:
+            - .:/app
+        depends_on:
+            - postgresql
+            - qdrant
+            - redis
+            - nats
+
+    workers:
+        image: python:3.12-slim
+        working_dir: /app
+        env_file:
+            - .env
+        environment:
+            POSTGRES_HOST: postgresql
+            QDRANT_HOST: qdrant
+            REDIS_HOST: redis
+            NATS_HOST: nats
+        command: sh -c "pip install --no-cache-dir -r requirements.txt && python -m src.workers"
+        volumes:
+            - .:/app
+        depends_on:
+            - postgresql
+            - qdrant
+            - redis
+            - nats
+
     postgresql:
         image: postgres:15-alpine
         environment:
@@ -28,8 +68,8 @@
     nats:
         image: nats:2-alpine
         ports:
-            - "${NATS_PORT}:4222"      
-            - "${NATS_MONITOR_PORT}:8222"  
+            - "${NATS_PORT}:4222"
+            - "${NATS_MONITOR_PORT}:8222"
         command: ["-js", "-sd", "/data", "-m", "8222"]
         volumes:
             - nats_data:/data

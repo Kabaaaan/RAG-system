@@ -6,6 +6,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
 
+from qdrant_client.http.models.models import FieldCondition, Filter, MatchValue
+
 from src.api_client import ApiClient
 from src.config.settings import AppSettings, get_settings
 from src.database import RecommendationRepository, session_scope
@@ -20,6 +22,10 @@ from src.vector_db import QdrantVectorClient
 GENERATE_TASK_TTL_SECONDS = 24 * 60 * 60
 RECOMMENDATION_TOP_K = 5
 RECOMMENDATION_SEARCH_K = 20
+RESOURCE_TYPE_BY_RECOMMENDATION_TYPE = {
+    "cold": "article",
+    "hot": "course",
+}
 PROMPTS_DIR = Path(__file__).resolve().parents[1] / "prompts"
 
 
@@ -214,7 +220,10 @@ class RecommendationGenerationService:
 
             digital_footprints = await mautic_client.get_digital_footprint(normalized_lead_id)
             query_text = self._format_digital_footprints(digital_footprints)
-            retrieved_resources = await self._retrieve_resources(query_text=query_text)
+            retrieved_resources = await self._retrieve_resources(
+                query_text=query_text,
+                recommendation_type=resolved_type,
+            )
             prompt_text = self._render_prompt(
                 recommendation_type=resolved_type,
                 available_content=self._format_available_content(retrieved_resources),
@@ -280,7 +289,7 @@ class RecommendationGenerationService:
             recommendation_id=recommendation_id,
         )
 
-    async def _retrieve_resources(self, *, query_text: str) -> list[RetrievedResourceRecord]:
+    async def _retrieve_resources(self, *, query_text: str, recommendation_type: str) -> list[RetrievedResourceRecord]:
         async with ApiClient.for_embeddings(settings=self._settings) as embedding_client:
             query_vector = await fetch_embedding(
                 client=embedding_client,
@@ -288,8 +297,17 @@ class RecommendationGenerationService:
                 settings=self._settings,
             )
 
+        resource_type = self._resource_type_for_recommendation(recommendation_type)
+        query_filter = self._build_resource_type_filter(resource_type)
         async with await QdrantVectorClient.connect(settings=self._settings) as qdrant_client:
-            scored_points = await qdrant_client.search(query_vector=query_vector, k=RECOMMENDATION_SEARCH_K)
+            if query_filter is None:
+                scored_points = await qdrant_client.search(query_vector=query_vector, k=RECOMMENDATION_SEARCH_K)
+            else:
+                scored_points = await qdrant_client.search_with_filter(
+                    query_vector=query_vector,
+                    query_filter=query_filter,
+                    k=RECOMMENDATION_SEARCH_K,
+                )
 
         resources: dict[int, RetrievedResourceRecord] = {}
         for point in scored_points:
@@ -319,6 +337,23 @@ class RecommendationGenerationService:
         if not retrieved_resources:
             raise ValueError("No similar resources were found in Qdrant for the provided digital footprint.")
         return retrieved_resources
+
+    @staticmethod
+    def _resource_type_for_recommendation(recommendation_type: str) -> str | None:
+        return RESOURCE_TYPE_BY_RECOMMENDATION_TYPE.get(recommendation_type)
+
+    @staticmethod
+    def _build_resource_type_filter(resource_type: str | None) -> Filter | None:
+        if resource_type is None:
+            return None
+        return Filter(
+            must=[
+                FieldCondition(
+                    key="resource_type",
+                    match=MatchValue(value=resource_type),
+                )
+            ]
+        )
 
     async def _resolve_recommendation_type(self, mautic_client: MauticClient, *, lead_id: int) -> str:
         stage = await mautic_client.get_contact_stage(contact_id=lead_id)
