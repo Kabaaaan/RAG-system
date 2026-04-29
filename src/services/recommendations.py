@@ -6,7 +6,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
 
-import httpx
 from qdrant_client.http.models.models import FieldCondition, Filter, MatchValue
 
 from src.api_client import ApiClient
@@ -378,55 +377,17 @@ class RecommendationGenerationService:
         recommendation_text: str,
         audit: RecommendationAuditLog,
     ) -> str:
-        candidates = self._build_mautic_recommendation_candidates(recommendation_text)
-        last_error: httpx.HTTPStatusError | None = None
-        for attempt, candidate in enumerate(candidates, start=1):
-            audit.step(
-                "mautic_save_attempt",
-                attempt=attempt,
-                field_alias=self._settings.mautic_recommendation_field_alias,
-                text=candidate,
-                text_length=len(candidate),
-            )
-            try:
-                await mautic_client.save_recommendation(
-                    lead_id,
-                    candidate,
-                    field_alias=self._settings.mautic_recommendation_field_alias,
-                )
-            except httpx.HTTPStatusError as exc:
-                last_error = exc
-                response_text = exc.response.text[:2000] if exc.response is not None else ""
-                audit.step(
-                    "mautic_save_failed",
-                    attempt=attempt,
-                    status_code=exc.response.status_code if exc.response is not None else None,
-                    response_text=response_text,
-                )
-                if exc.response is None or exc.response.status_code != 422:
-                    raise
-                continue
+        candidate = self._prepare_recommendation_for_mautic(recommendation_text, max_length=self._settings.mautic_recommendation_max_length)
+        audit.step("mautic_save_attempt", field_alias=self._settings.mautic_recommendation_field_alias, text=candidate, text_length=len(candidate))
 
-            audit.step("mautic_save_succeeded", attempt=attempt, text_length=len(candidate))
-            return candidate
+        await mautic_client.save_recommendation(
+            lead_id,
+            candidate,
+            field_alias=self._settings.mautic_recommendation_field_alias,
+        )
 
-        if last_error is not None:
-            raise last_error
-        raise ValueError("No Mautic recommendation text candidates were generated.")
-
-    def _build_mautic_recommendation_candidates(self, recommendation_text: str) -> list[str]:
-        base_limit = max(int(self._settings.mautic_recommendation_max_length), 0)
-        limits = [base_limit] if base_limit else [0]
-        for fallback_limit in (190, 120, 80):
-            if fallback_limit not in limits:
-                limits.append(fallback_limit)
-
-        candidates: list[str] = []
-        for limit in limits:
-            candidate = self._prepare_recommendation_for_mautic(recommendation_text, max_length=limit)
-            if candidate and candidate not in candidates:
-                candidates.append(candidate)
-        return candidates
+        audit.step("mautic_save_succeeded", text_length=len(candidate))
+        return candidate
 
     async def _retrieve_resources(
         self,
