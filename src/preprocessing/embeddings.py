@@ -3,6 +3,8 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+from .digital_footprints import build_digital_footprint_profile_text
+
 Event = Mapping[str, Any]
 DigitalFootprints = Mapping[str, Any] | Sequence[Event] | str | None
 
@@ -28,6 +30,10 @@ def create_embedding_passage_input(title: str, description: str) -> str:
 
 
 def create_embedding_question_input(digital_footprints: DigitalFootprints) -> str:
+    profile_text = build_digital_footprint_profile_text(digital_footprints)
+    if profile_text != "No user activity was found in Mautic.":
+        return "query: " + profile_text
+
     events: Sequence[Event] | None = None
     if isinstance(digital_footprints, Mapping):
         raw_events = digital_footprints.get("events")

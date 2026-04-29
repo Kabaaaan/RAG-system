@@ -12,6 +12,7 @@ from src.api_client import ApiClient
 from src.config.settings import AppSettings, get_settings
 from src.database import RecommendationRepository, session_scope
 from src.mauitc import MauticClient
+from src.preprocessing import build_digital_footprint_profile_text
 from src.query_client import RAGTasksClient
 from src.rag_core.embeddings import fetch_embedding
 from src.rag_core.llm import generate_llm_response
@@ -263,7 +264,7 @@ class RecommendationGenerationService:
 
             await mautic_client.save_recommendation(
                 normalized_lead_id,
-                recommendation_text,
+                self._prepare_recommendation_for_mautic(recommendation_text),
                 field_alias=self._settings.mautic_recommendation_field_alias,
             )
 
@@ -392,31 +393,20 @@ class RecommendationGenerationService:
 
     @staticmethod
     def _format_digital_footprints(events: list[dict[str, object]]) -> str:
-        if not events:
-            return "No user activity was found in Mautic."
+        return build_digital_footprint_profile_text(events)
 
-        lines: list[str] = []
-        for index, event in enumerate(events[:25], start=1):
-            summary = str(event.get("summary") or event.get("title") or event.get("activity_kind") or "").strip()
-            timestamp = str(event.get("timestamp") or "").strip()
-            description = str(event.get("description") or "").strip()
-            entities = event.get("entities")
-
-            parts: list[str] = []
-            if summary:
-                parts.append(summary)
-            if description and description.lower() not in summary.lower():
-                parts.append(description)
-            if isinstance(entities, dict) and entities:
-                parts.append(json.dumps(entities, ensure_ascii=False))
-            if timestamp:
-                parts.append(f"timestamp={timestamp}")
-
-            line = " | ".join(part for part in parts if part)
-            if line:
-                lines.append(f"{index}. {line}")
-
-        return "\n".join(lines) if lines else "No user activity was found in Mautic."
+    def _prepare_recommendation_for_mautic(self, recommendation_text: str) -> str:
+        max_length = max(int(self._settings.mautic_recommendation_max_length), 0)
+        normalized = " ".join(recommendation_text.split())
+        if max_length == 0 or len(normalized) <= max_length:
+            return normalized
+        if max_length <= 1:
+            return normalized[:max_length]
+        shortened = normalized[: max_length - 1].rstrip()
+        last_space = shortened.rfind(" ")
+        if last_space >= max_length // 2:
+            shortened = shortened[:last_space].rstrip()
+        return shortened + "…"
 
     @staticmethod
     def _format_available_content(resources: list[RetrievedResourceRecord]) -> str:
