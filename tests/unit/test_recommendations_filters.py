@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from qdrant_client.http.models.models import FieldCondition, MatchValue
 
+from src.config.settings import AppSettings
 from src.services.recommendations import RecommendationGenerationService
 
 
@@ -32,3 +33,17 @@ def test_build_resource_type_filter_matches_qdrant_payload_field() -> None:
 
 def test_build_resource_type_filter_returns_none_without_resource_type() -> None:
     assert RecommendationGenerationService._build_resource_type_filter(None) is None
+
+
+def test_prepare_recommendation_for_mautic_truncates_long_text() -> None:
+    settings = AppSettings(
+        LLM_API_URL="http://llm.test",
+        EMBEDDING_MODEL_API_URL="http://embedding.test",
+        MAUTIC_RECOMMENDATION_MAX_LENGTH=32,
+    )
+    service = RecommendationGenerationService(settings=settings)
+
+    prepared = service._prepare_recommendation_for_mautic("Очень длинная рекомендация для поля Mautic")
+
+    assert len(prepared) <= 32
+    assert prepared.endswith("…")

@@ -31,11 +31,10 @@ def test_create_embedding_question_input_builds_summary() -> None:
         }
     )
     assert result.startswith("query: ")
-    assert "Просмотры:" in result
-    assert "Поиск:" in result
-    assert "Избранное:" in result
-    assert "Просмотры: Просмотр" not in result
-    assert "Избранное: Избранное" not in result
+    assert "Цифровой профиль пользователя" in result
+    assert "Python basics" in result
+    assert "data analysis" in result
+    assert "SQL" in result
 
 
 def test_format_courses_context_empty() -> None:
