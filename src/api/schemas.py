@@ -158,6 +158,7 @@ class UpdatePromptRequest(BaseSchema):
 
 class CreateMauticFieldRequest(BaseSchema):
     name: str = Field(..., description="Human-readable contact field name.")
+    type: str = Field(..., description="Type of new field (text, textarea, boolean, date, url etc.)")
 
 
 class MauticFieldResponse(BaseSchema):

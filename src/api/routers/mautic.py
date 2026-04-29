@@ -24,6 +24,10 @@ def _build_field_alias(name: str) -> str:
     return alias or "custom_field"
 
 
+def _normalize_field_type(field_type: str) -> str:
+    return field_type.strip().lower() or "text"
+
+
 def _extract_field_payload(payload: Any) -> Mapping[str, Any] | None:
     if not isinstance(payload, Mapping):
         return None
@@ -38,10 +42,11 @@ def _extract_field_payload(payload: Any) -> Mapping[str, Any] | None:
 @router.post("/field", response_model=MauticFieldResponse, status_code=status.HTTP_201_CREATED)
 async def create_contact_field_endpoint(payload: CreateMauticFieldRequest) -> MauticFieldResponse:
     alias = _build_field_alias(payload.name)
+    type = _normalize_field_type(payload.type)
     mautic_payload = {
         "label": payload.name,
         "alias": alias,
-        "type": "text",
+        "type": type,
         "object": "lead",
     }
 
