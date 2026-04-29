@@ -15,7 +15,7 @@ from src.mauitc import MauticClient
 from src.query_client import RAGTasksClient
 from src.rag_core.embeddings import fetch_embedding
 from src.rag_core.llm import generate_llm_response
-from src.services.errors import ValidationError
+from src.services.errors import TaskStateNotFoundError, ValidationError
 from src.task_storage import RedisClient
 from src.vector_db import QdrantVectorClient
 
@@ -536,7 +536,7 @@ class RecommendationGenerationService:
             key = self._build_key(task_id)
             record = await redis_client.get_record(key)
             if record is None:
-                raise ValueError(f"Recommendation task '{task_id}' was not found in Redis.")
+                raise TaskStateNotFoundError(f"Recommendation task '{task_id}' was not found in Redis.")
 
             record["status"] = status
             record["updated_at"] = self._timestamp()
