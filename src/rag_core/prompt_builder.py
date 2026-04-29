@@ -22,9 +22,5 @@ def format_courses_context(courses: Sequence[RetrievedCourse]) -> str:
         short_description = course.description.strip().replace("\n", " ")
         if len(short_description) > 300:
             short_description = short_description[:297] + "..."
-        lines.append(
-            f"{index}. {course.name}\n"
-            f"Описание: {short_description}\n"
-            f"Семантическая релевантность: {course.score:.3f}"
-        )
+        lines.append(f"{index}. {course.name}\nОписание: {short_description}\nСемантическая релевантность: {course.score:.3f}")
     return "\n\n".join(lines)

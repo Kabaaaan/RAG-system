@@ -96,6 +96,9 @@ class RAGTasksClient:
         durable: str,
         handler: Callable[[Msg], Awaitable[None]],
         max_ack_pending: int = 1,
+        ack_wait: float | None = None,
+        max_deliver: int | None = None,
+        backoff: list[float] | None = None,
     ) -> None:
         if self.js is None:
             await self.connect()
@@ -106,7 +109,12 @@ class RAGTasksClient:
             subject=subject,
             durable=durable,
             cb=handler,
-            config=ConsumerConfig(max_ack_pending=max_ack_pending),
+            config=ConsumerConfig(
+                max_ack_pending=max_ack_pending,
+                ack_wait=ack_wait,
+                max_deliver=max_deliver,
+                backoff=backoff,
+            ),
             manual_ack=True,
         )
 
