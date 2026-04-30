@@ -350,7 +350,7 @@ def test_create_mautic_contact_field_endpoint(monkeypatch) -> None:
     with _build_client() as client:
         response = client.post(
             "/mautic/field",
-            json={"name": "Lead Score"},
+            json={"name": "Lead Score", "type": "text"},
             headers=_auth_headers(),
         )
 

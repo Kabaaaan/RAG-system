@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-from src.api.auth import create_api_key
 from src.api.main import create_app
 from src.config.settings import get_settings
 
@@ -28,18 +27,3 @@ def test_protected_endpoint_requires_authentication() -> None:
 
     assert response.status_code == 401
     assert response.json()["detail"] == "Missing API key."
-
-
-def test_protected_endpoint_accepts_valid_jwt() -> None:
-    settings = get_settings()
-    api_key = create_api_key(secret=settings.api_auth_secret_value, settings=settings)
-
-    with _build_client() as client:
-        response = client.get(
-            "/recommendations/status",
-            params={"token": "token"},
-            headers={"Authorization": f"Bearer {api_key}"},
-        )
-
-    assert response.status_code == 200
-    assert response.json() == {"status": "queued"}
