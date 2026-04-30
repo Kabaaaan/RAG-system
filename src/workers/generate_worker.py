@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -15,6 +16,10 @@ from src.utils import configure_logging, get_logger
 RETRY_DELAY_SECONDS = 60
 GENERATE_ACK_WAIT_SECONDS = 30 * 60
 GENERATE_MAX_DELIVER = 5
+
+# How often to send an in-progress heartbeat to NATS during long-running generation.
+# Must be well below ack_wait (30 min) to prevent spurious redelivery.
+GENERATE_HEARTBEAT_INTERVAL_SECONDS = 5 * 60  # 5 minutes
 
 settings = get_settings()
 configure_logging(settings.log_level)
@@ -55,6 +60,21 @@ async def _get_task_state_best_effort(task_id: str) -> dict[str, object] | None:
         logger.exception("Could not read generate task state", extra={"task_id": task_id})
         return None
     return state if isinstance(state, dict) else None
+
+
+async def _send_in_progress_heartbeat(msg: Any, interval: float) -> None:
+    """Periodically notify NATS that the message is still being processed.
+
+    This resets the ack_wait timer on the server side, preventing the message
+    from being redelivered while a long-running LLM generation is in progress.
+    """
+    while True:
+        await asyncio.sleep(interval)
+        try:
+            await msg.in_progress()
+        except Exception:
+            logger.debug("Failed to send in_progress heartbeat; stopping heartbeat loop")
+            return
 
 
 def _parse_message(raw: str) -> GenerateTaskMessage:
@@ -168,7 +188,15 @@ async def generate_handler(msg: Any) -> None:
         await _mark_failed_best_effort(task, exc)
         await msg.ack()
         return
+    except Exception:
+        logger.exception(
+            "Unexpected error while marking generate task as processing; scheduling retry",
+            extra={"task_id": task.task_id},
+        )
+        await msg.nak(delay=RETRY_DELAY_SECONDS)
+        return
 
+    heartbeat_task = asyncio.create_task(_send_in_progress_heartbeat(msg, GENERATE_HEARTBEAT_INTERVAL_SECONDS))
     try:
         generated = await recommendation_generation_service.generate(
             task_id=task.task_id,
@@ -197,6 +225,10 @@ async def generate_handler(msg: Any) -> None:
         await _mark_failed_best_effort(task, exc)
         await msg.nak(delay=RETRY_DELAY_SECONDS)
         return
+    finally:
+        heartbeat_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await heartbeat_task
 
     await msg.ack()
     task_state = await _get_task_state_best_effort(task.task_id)

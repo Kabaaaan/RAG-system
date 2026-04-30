@@ -82,7 +82,7 @@ async def index_handler(msg):
         if resource_id is not None:
             await resource_indexing_service.mark_failed(resource_id=resource_id, error=str(e))
         print(f"[IndexWorker] Error: {e}")
-        await msg.nak()
+        await msg.nak(delay=60)
 
 
 async def run():
