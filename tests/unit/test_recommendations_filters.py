@@ -6,6 +6,14 @@ from src.config.settings import AppSettings
 from src.services.recommendations import RecommendationGenerationService
 
 
+class DummyAudit:
+    def __init__(self) -> None:
+        self.steps: list[tuple[str, dict[str, object]]] = []
+
+    def step(self, name: str, **data: object) -> None:
+        self.steps.append((name, data))
+
+
 def test_resource_type_for_cold_recommendations_is_article() -> None:
     assert RecommendationGenerationService._resource_type_for_recommendation("cold") == "article"
 
@@ -46,4 +54,4 @@ def test_prepare_recommendation_for_mautic_truncates_long_text() -> None:
     prepared = service._prepare_recommendation_for_mautic("Очень длинная рекомендация для поля Mautic")
 
     assert len(prepared) <= 32
-    assert prepared.endswith("…")
+    assert prepared.endswith("...")

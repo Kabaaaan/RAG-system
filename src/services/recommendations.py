@@ -3,10 +3,13 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from pathlib import Path
+from typing import TYPE_CHECKING
 from uuid import uuid4
 
-from qdrant_client.http.models.models import FieldCondition, Filter, MatchValue
+import httpx
+
+if TYPE_CHECKING:
+    from qdrant_client.http.models.models import Filter
 
 from src.api_client import ApiClient
 from src.config.settings import AppSettings, get_settings
@@ -16,6 +19,13 @@ from src.preprocessing import build_digital_footprint_profile_text
 from src.query_client import RAGTasksClient
 from src.rag_core.embeddings import fetch_embedding
 from src.rag_core.llm import generate_llm_response
+from src.rag_core.parser import parse_recommendation_payload
+from src.rag_core.prompt_builder import PROMPTS_DIR, format_available_content, render_typed_prompt
+from src.rag_core.retriever import (
+    build_resource_type_filter,
+    resource_type_for_recommendation,
+)
+from src.rag_core.schemas import RetrievedResourceRecord
 from src.services.errors import TaskStateNotFoundError, ValidationError
 from src.services.recommendation_audit import RecommendationAuditLog
 from src.task_storage import RedisClient
@@ -25,11 +35,6 @@ from src.vector_db import QdrantVectorClient
 GENERATE_TASK_TTL_SECONDS = 24 * 60 * 60
 RECOMMENDATION_TOP_K = 5
 RECOMMENDATION_SEARCH_K = 20
-RESOURCE_TYPE_BY_RECOMMENDATION_TYPE = {
-    "cold": "article",
-    "hot": "course",
-}
-PROMPTS_DIR = Path(__file__).resolve().parents[1] / "prompts"
 
 logger = get_logger(__name__)
 
@@ -51,16 +56,6 @@ class LeadRecommendationsRecord:
 class LeadActionsRecord:
     lead_id: str
     actions: list[RecommendationItemRecord]
-
-
-@dataclass(slots=True, frozen=True)
-class RetrievedResourceRecord:
-    resource_id: int
-    resource_type: str
-    title: str
-    url: str | None
-    chunk_text: str
-    score: float
 
 
 @dataclass(slots=True, frozen=True)
@@ -218,10 +213,6 @@ class RecommendationGenerationService:
         recommendation_type: str | None = None,
     ) -> GeneratedRecommendationRecord:
         normalized_lead_id = self._parse_lead_id(lead_id)
-        # ── Fast idempotency guard ────────────────────────────────────────────
-        # On NATS message redelivery (e.g. stale consumer ack_wait expiry),
-        # the pipeline must not re-run.  Check the DB first — it is cheap
-        # compared to the full LLM pipeline (~3 min).
         existing = self._find_existing_recommendation_with_type(lead_id=normalized_lead_id, task_id=task_id)
         if existing is not None:
             existing_id, existing_type = existing
@@ -344,12 +335,20 @@ class RecommendationGenerationService:
                     length=len(recommendation_text),
                 )
 
-                mautic_text = await self._save_recommendation_to_mautic(
-                    mautic_client=mautic_client,
-                    lead_id=normalized_lead_id,
-                    recommendation_text=recommendation_text,
-                    audit=audit,
-                )
+                try:
+                    mautic_text = await self._save_recommendation_to_mautic(
+                        mautic_client=mautic_client,
+                        lead_id=normalized_lead_id,
+                        recommendation_text=recommendation_text,
+                        audit=audit,
+                    )
+                except httpx.HTTPStatusError:
+                    # Already logged in detail by _save_recommendation_to_mautic.
+                    # An HTTP error from Mautic (e.g. 422 "email: This field must
+                    # be unique") is a data-integrity issue in Mautic that
+                    # retrying cannot fix.  The recommendation is still saved to
+                    # the database below so no data is lost.
+                    mautic_text = None
 
             serialized_payload = json.dumps(stored_payload, ensure_ascii=False)
             with session_scope() as session:
@@ -410,15 +409,32 @@ class RecommendationGenerationService:
         field_alias = self._settings.mautic_recommendation_field_alias
         audit.step("mautic_save_attempt", field_alias=field_alias, text=candidate, text_length=len(candidate))
 
-        response = await mautic_client.save_recommendation(
-            lead_id,
-            candidate,
-            field_alias=field_alias,
-        )
+        try:
+            response = await mautic_client.save_recommendation(
+                lead_id,
+                candidate,
+                field_alias=field_alias,
+            )
+        except httpx.HTTPStatusError as http_err:
+            body = ""
+            try:
+                body = http_err.response.text[:800]
+            except Exception:
+                pass
+            logger.error(
+                "Mautic returned HTTP %d when saving to field '%s'. Response body: %s",
+                http_err.response.status_code,
+                field_alias,
+                body,
+            )
+            audit.step(
+                "mautic_save_http_error",
+                status_code=http_err.response.status_code,
+                field_alias=field_alias,
+                response_body=body,
+            )
+            raise
 
-        # Validate that Mautic actually stored the value.
-        # Mautic silently ignores unknown field aliases and still returns HTTP 200,
-        # so a missing key in the response fields is a strong signal of a wrong alias.
         try:
             response_data = response.json()
             contact = response_data.get("contact") or {}
@@ -438,7 +454,7 @@ class RecommendationGenerationService:
                         available_fields=list(all_fields.keys())[:30],
                     )
         except Exception:
-            pass  # Defensive: never fail the pipeline due to response inspection
+            pass
 
         audit.step("mautic_save_succeeded", text_length=len(candidate))
         return candidate
@@ -537,20 +553,21 @@ class RecommendationGenerationService:
 
     @staticmethod
     def _resource_type_for_recommendation(recommendation_type: str) -> str | None:
-        return RESOURCE_TYPE_BY_RECOMMENDATION_TYPE.get(recommendation_type)
+        """Return the Qdrant resource_type filter for *recommendation_type*.
+
+        Delegates to :func:`src.rag_core.retriever.resource_type_for_recommendation`.
+        Kept as a static method for backward compatibility with existing tests.
+        """
+        return resource_type_for_recommendation(recommendation_type)
 
     @staticmethod
     def _build_resource_type_filter(resource_type: str | None) -> Filter | None:
-        if resource_type is None:
-            return None
-        return Filter(
-            must=[
-                FieldCondition(
-                    key="resource_type",
-                    match=MatchValue(value=resource_type),
-                )
-            ]
-        )
+        """Build a Qdrant Filter for *resource_type*.
+
+        Delegates to :func:`src.rag_core.retriever.build_resource_type_filter`.
+        Kept as a static method for backward compatibility with existing tests.
+        """
+        return build_resource_type_filter(resource_type)  # type: ignore[return-value]
 
     async def _resolve_recommendation_type(self, mautic_client: MauticClient, *, lead_id: int) -> str:
         stage = await mautic_client.get_contact_stage(contact_id=lead_id)
@@ -581,11 +598,16 @@ class RecommendationGenerationService:
         raise ValueError(f"Unsupported Mautic stage for lead '{lead_id}': {stage!r}")
 
     def _render_prompt(self, *, recommendation_type: str, available_content: str, digital_traces: str) -> str:
-        prompt_path = PROMPTS_DIR / f"{recommendation_type}.txt"
-        if not prompt_path.exists():
-            raise ValueError(f"Prompt file for recommendation type '{recommendation_type}' was not found.")
-        template = prompt_path.read_text(encoding="utf-8")
-        return template.format(available_content=available_content, digital_traces=digital_traces)
+        """Render a type-specific recommendation prompt.
+
+        Delegates to :func:`src.rag_core.prompt_builder.render_typed_prompt`.
+        """
+        return render_typed_prompt(
+            recommendation_type=recommendation_type,
+            available_content=available_content,
+            digital_traces=digital_traces,
+            prompts_dir=PROMPTS_DIR,
+        )
 
     @staticmethod
     def _format_digital_footprints(events: list[dict[str, object]]) -> str:
@@ -607,42 +629,19 @@ class RecommendationGenerationService:
 
     @staticmethod
     def _format_available_content(resources: list[RetrievedResourceRecord]) -> str:
-        lines: list[str] = []
-        for index, resource in enumerate(resources, start=1):
-            fragment = resource.chunk_text.replace("\n", " ").strip()
-            if len(fragment) > 500:
-                fragment = fragment[:497] + "..."
-            lines.append(
-                "\n".join(
-                    [
-                        f"{index}. {resource.title}",
-                        f"Type: {resource.resource_type or 'unknown'}",
-                        f"URL: {resource.url or 'n/a'}",
-                        f"Fragment: {fragment or 'n/a'}",
-                        f"Relevance: {resource.score:.3f}",
-                    ]
-                )
-            )
-        return "\n\n".join(lines)
+        """Format retrieved resources into an LLM-ready context block.
+
+        Delegates to :func:`src.rag_core.prompt_builder.format_available_content`.
+        """
+        return format_available_content(resources)
 
     @staticmethod
     def _parse_recommendation_payload(raw_text: str) -> dict[str, object]:
-        stripped = raw_text.strip()
-        if not stripped:
-            raise ValueError("LLM returned an empty recommendation payload.")
+        """Extract a JSON recommendation payload from raw LLM output.
 
-        try:
-            payload = json.loads(stripped)
-        except json.JSONDecodeError:
-            start = stripped.find("{")
-            end = stripped.rfind("}")
-            if start == -1 or end == -1 or end <= start:
-                raise ValueError("LLM did not return valid JSON.") from None
-            payload = json.loads(stripped[start : end + 1])
-
-        if not isinstance(payload, dict):
-            raise ValueError("Recommendation payload must be a JSON object.")
-        return payload
+        Delegates to :func:`src.rag_core.parser.parse_recommendation_payload`.
+        """
+        return parse_recommendation_payload(raw_text)
 
     def _find_existing_recommendation_id(self, *, lead_id: int, task_id: str) -> int | None:
         with session_scope() as session:

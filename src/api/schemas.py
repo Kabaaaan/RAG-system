@@ -180,3 +180,14 @@ class UpdateMauticFieldResponse(BaseSchema):
     field: str = Field(..., description="Updated contact field alias.")
     value: Any = Field(..., description="Updated field value.")
     status: str = Field(..., description="Update operation status.")
+
+
+class CheckContactByEmailResponse(BaseSchema):
+    unique: bool = Field(
+        ...,
+        description="True if exactly one contact with this email exists in Mautic.",
+    )
+    contact_id: int | None = Field(
+        default=None,
+        description="Mautic contact identifier. Populated only when unique is True.",
+    )

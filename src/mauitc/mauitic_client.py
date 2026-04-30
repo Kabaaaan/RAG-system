@@ -244,6 +244,36 @@ class MauticClient:
             timeout=timeout,
         )
 
+    async def get_contacts_count_by_email(
+        self,
+        email: str,
+        *,
+        headers: Mapping[str, str] | None = None,
+        timeout: float | None = None,
+    ) -> tuple[int, int | None]:
+        response = await self.find_contacts_by_email(email, headers=headers, timeout=timeout)
+        data = response.json()
+
+        total_raw = data.get("total")
+        try:
+            total = int(total_raw)
+        except (ValueError, TypeError):
+            contacts_raw = data.get("contacts")
+            total = len(contacts_raw) if isinstance(contacts_raw, dict) else 0
+
+        if total != 1:
+            return total, None
+
+        contacts = data.get("contacts")
+        if not isinstance(contacts, dict) or not contacts:
+            return total, None
+
+        contact_id_str = next(iter(contacts.keys()))
+        try:
+            return total, int(contact_id_str)
+        except (ValueError, TypeError):
+            return total, None
+
     async def get_stages(
         self,
         *,
