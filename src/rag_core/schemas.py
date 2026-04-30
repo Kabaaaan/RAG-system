@@ -3,6 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Protocol
 
+# ---------------------------------------------------------------------------
+# Resource retrieval (typed-recommendation pipeline)
+# ---------------------------------------------------------------------------
+
 
 class CourseLike(Protocol):
     @property
@@ -31,6 +35,23 @@ class CourseIndexingStats:
     courses_count: int
     chunks_count: int
     collection_recreated: bool
+
+
+@dataclass(slots=True, frozen=True)
+class RetrievedResourceRecord:
+    """A single resource retrieved from the vector DB during typed-recommendation generation."""
+
+    resource_id: int
+    resource_type: str
+    title: str
+    url: str | None
+    chunk_text: str
+    score: float
+
+
+# ---------------------------------------------------------------------------
+# Course pipeline (generic RAGPipeline)
+# ---------------------------------------------------------------------------
 
 
 @dataclass(slots=True, frozen=True)

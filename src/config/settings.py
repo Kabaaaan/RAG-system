@@ -40,7 +40,7 @@ class AppSettings(BaseSettings):
     mautic_user: str = Field(default="", validation_alias="MAUTIC_USER")
     mautic_password: str = Field(default="", validation_alias="MAUTIC_PASSWORD")
     mautic_recommendation_field: str = Field(
-        default="recommendation",
+        default="recommendation_by_rag",
         validation_alias="MAUTIC_RECOMMENDATION_FIELD",
     )
     mautic_recommendation_max_length: int = Field(
