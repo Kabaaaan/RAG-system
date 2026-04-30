@@ -4,9 +4,10 @@ import re
 from collections.abc import Mapping
 from typing import Any
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, HTTPException, Query, status
 
 from src.api.schemas import (
+    CheckContactByEmailResponse,
     CreateMauticFieldRequest,
     MauticFieldResponse,
     UpdateMauticFieldRequest,
@@ -80,3 +81,28 @@ async def update_contact_field_endpoint(payload: UpdateMauticFieldRequest) -> Up
         value=payload.value,
         status="updated",
     )
+
+
+@router.get("/contact/check", response_model=CheckContactByEmailResponse, status_code=status.HTTP_200_OK)
+async def check_contact_by_email_endpoint(
+    email: str = Query(..., description="Email address to look up in Mautic."),
+) -> CheckContactByEmailResponse:
+    """Check how many Mautic contacts share the given email address.
+
+    - **200 unique=true** — exactly one contact found; ``contact_id`` is set.
+    - **200 unique=false** — two or more contacts share this email.
+    - **404** — no contacts with this email exist in Mautic.
+    """
+    async with MauticClient() as mautic_client:
+        count, contact_id = await mautic_client.get_contacts_count_by_email(email)
+
+    if count == 0:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No contacts found with email '{email}'.",
+        )
+
+    if count == 1:
+        return CheckContactByEmailResponse(unique=True, contact_id=contact_id)
+
+    return CheckContactByEmailResponse(unique=False)
