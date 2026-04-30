@@ -1,4 +1,5 @@
 import json
+import logging
 import uuid
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
@@ -10,6 +11,8 @@ from nats.js import JetStreamContext
 from nats.js.api import ConsumerConfig, RetentionPolicy, StreamConfig
 
 from src.config.settings import AppSettings, get_settings
+
+logger = logging.getLogger(__name__)
 
 
 class RAGTasksClient:
@@ -50,6 +53,32 @@ class RAGTasksClient:
                     max_bytes=-1,
                 )
             )
+
+    async def _reset_consumer_on_startup(self, durable: str) -> None:
+        """Delete the durable consumer (if it exists) so it is recreated with
+        the correct configuration on the next subscribe() call.
+
+        Root cause this addresses: a consumer created in a previous run may have
+        stale settings (e.g. default ack_wait of 30 s instead of the intended
+        30 min, or unlimited max_deliver).  NATS does not automatically apply the
+        ConsumerConfig passed to js.subscribe() when the consumer already exists —
+        it simply binds to the existing one.  Deleting it here forces recreation
+        with the correct parameters.
+
+        With WorkQueue retention, any unacked messages are returned to the stream
+        and redelivered to the new consumer, so no messages are lost.
+        """
+        if self.js is None:
+            return
+        try:
+            await self.js.delete_consumer(self.stream_name, durable)
+            logger.info(
+                "Stale NATS consumer '%s' deleted; it will be recreated with correct ack_wait / max_deliver settings on subscribe.",
+                durable,
+            )
+        except Exception:
+            # Consumer does not exist yet, or a transient network error — both are fine.
+            pass
 
     async def close(self) -> None:
         if self.nc:
@@ -104,6 +133,11 @@ class RAGTasksClient:
             await self.connect()
         if self.js is None:
             raise RuntimeError("JetStream context is not initialized")
+
+        # Ensure the consumer is created fresh with the correct config.
+        # (A consumer that survived from a previous run keeps its original
+        # settings; deleting it here forces recreation with our parameters.)
+        await self._reset_consumer_on_startup(durable)
 
         await self.js.subscribe(
             subject=subject,

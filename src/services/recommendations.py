@@ -19,6 +19,7 @@ from src.rag_core.llm import generate_llm_response
 from src.services.errors import TaskStateNotFoundError, ValidationError
 from src.services.recommendation_audit import RecommendationAuditLog
 from src.task_storage import RedisClient
+from src.utils import get_logger
 from src.vector_db import QdrantVectorClient
 
 GENERATE_TASK_TTL_SECONDS = 24 * 60 * 60
@@ -29,6 +30,8 @@ RESOURCE_TYPE_BY_RECOMMENDATION_TYPE = {
     "hot": "course",
 }
 PROMPTS_DIR = Path(__file__).resolve().parents[1] / "prompts"
+
+logger = get_logger(__name__)
 
 
 @dataclass(slots=True, frozen=True)
@@ -215,6 +218,55 @@ class RecommendationGenerationService:
         recommendation_type: str | None = None,
     ) -> GeneratedRecommendationRecord:
         normalized_lead_id = self._parse_lead_id(lead_id)
+        # ── Fast idempotency guard ────────────────────────────────────────────
+        # On NATS message redelivery (e.g. stale consumer ack_wait expiry),
+        # the pipeline must not re-run.  Check the DB first — it is cheap
+        # compared to the full LLM pipeline (~3 min).
+        existing = self._find_existing_recommendation_with_type(lead_id=normalized_lead_id, task_id=task_id)
+        if existing is not None:
+            existing_id, existing_type = existing
+            resolved_type_early = existing_type or recommendation_type or ""
+            task_created_at_early = await self._get_task_created_at(task_id=task_id)
+            early_audit = RecommendationAuditLog(
+                task_id=task_id,
+                lead_id=normalized_lead_id,
+                recommendation_type=resolved_type_early,
+                base_dir=self._settings.recommendation_audit_log_dir,
+                task_created_at=task_created_at_early,
+            )
+            early_audit.step(
+                "generation_started",
+                lead_id=str(normalized_lead_id),
+                requested_type=recommendation_type,
+            )
+            early_audit.finish(
+                status="already_completed",
+                recommendation_id=existing_id,
+                audit_log_path=str(early_audit.path),
+            )
+            logger.info(
+                "Generate task already completed; skipping pipeline",
+                extra={"task_id": task_id, "recommendation_id": existing_id},
+            )
+            return GeneratedRecommendationRecord(
+                task_id=task_id,
+                lead_id=normalized_lead_id,
+                recommendation_type=resolved_type_early,
+                prompt_text="",
+                query_text="",
+                retrieved_resources=[],
+                recommendation_payload={
+                    "_system": {
+                        "task_id": task_id,
+                        "lead_id": str(normalized_lead_id),
+                        "type": resolved_type_early,
+                    }
+                },
+                recommendation_text="",
+                recommendation_id=existing_id,
+                audit_log_path=str(early_audit.path),
+            )
+        # ── End idempotency guard ─────────────────────────────────────────────
         task_created_at = await self._get_task_created_at(task_id=task_id)
         audit = RecommendationAuditLog(
             task_id=task_id,
@@ -292,29 +344,6 @@ class RecommendationGenerationService:
                     length=len(recommendation_text),
                 )
 
-                existing_recommendation_id = self._find_existing_recommendation_id(
-                    lead_id=normalized_lead_id,
-                    task_id=task_id,
-                )
-                if existing_recommendation_id is not None:
-                    audit.finish(
-                        status="already_completed",
-                        recommendation_id=existing_recommendation_id,
-                        audit_log_path=str(audit.path),
-                    )
-                    return GeneratedRecommendationRecord(
-                        task_id=task_id,
-                        lead_id=normalized_lead_id,
-                        recommendation_type=resolved_type,
-                        prompt_text=prompt_text,
-                        query_text=query_text,
-                        retrieved_resources=retrieved_resources,
-                        recommendation_payload=stored_payload,
-                        recommendation_text=recommendation_text,
-                        recommendation_id=existing_recommendation_id,
-                        audit_log_path=str(audit.path),
-                    )
-
                 mautic_text = await self._save_recommendation_to_mautic(
                     mautic_client=mautic_client,
                     lead_id=normalized_lead_id,
@@ -378,13 +407,38 @@ class RecommendationGenerationService:
         audit: RecommendationAuditLog,
     ) -> str:
         candidate = self._prepare_recommendation_for_mautic(recommendation_text, max_length=self._settings.mautic_recommendation_max_length)
-        audit.step("mautic_save_attempt", field_alias=self._settings.mautic_recommendation_field_alias, text=candidate, text_length=len(candidate))
+        field_alias = self._settings.mautic_recommendation_field_alias
+        audit.step("mautic_save_attempt", field_alias=field_alias, text=candidate, text_length=len(candidate))
 
-        await mautic_client.save_recommendation(
+        response = await mautic_client.save_recommendation(
             lead_id,
             candidate,
-            field_alias=self._settings.mautic_recommendation_field_alias,
+            field_alias=field_alias,
         )
+
+        # Validate that Mautic actually stored the value.
+        # Mautic silently ignores unknown field aliases and still returns HTTP 200,
+        # so a missing key in the response fields is a strong signal of a wrong alias.
+        try:
+            response_data = response.json()
+            contact = response_data.get("contact") or {}
+            if isinstance(contact, dict):
+                all_fields = (contact.get("fields") or {}).get("all") or {}
+                if isinstance(all_fields, dict) and all_fields and field_alias not in all_fields:
+                    logger.warning(
+                        "Mautic response does not contain field '%s' — the alias may be "
+                        "incorrect or the field does not exist. "
+                        "Available field keys (first 30): %s",
+                        field_alias,
+                        list(all_fields.keys())[:30],
+                    )
+                    audit.step(
+                        "mautic_save_field_missing_in_response",
+                        field_alias=field_alias,
+                        available_fields=list(all_fields.keys())[:30],
+                    )
+        except Exception:
+            pass  # Defensive: never fail the pipeline due to response inspection
 
         audit.step("mautic_save_succeeded", text_length=len(candidate))
         return candidate
@@ -605,6 +659,29 @@ class RecommendationGenerationService:
                     continue
                 if str(system_payload.get("task_id") or "").strip() == task_id:
                     return int(item.id)
+        return None
+
+    def _find_existing_recommendation_with_type(self, *, lead_id: int, task_id: str) -> tuple[int, str | None] | None:
+        """Look up an already-completed recommendation by task_id.
+
+        Returns (recommendation_id, recommendation_type) if found, else None.
+        Used for fast idempotency checks before running the expensive pipeline.
+        """
+        with session_scope() as session:
+            repository = RecommendationRepository(session)
+            for item in repository.list_for_lead(lead_id=lead_id, limit=100):
+                try:
+                    payload = json.loads(item.text)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(payload, dict):
+                    continue
+                system_payload = payload.get("_system")
+                if not isinstance(system_payload, dict):
+                    continue
+                if str(system_payload.get("task_id") or "").strip() == task_id:
+                    rec_type = str(system_payload.get("type") or "").strip() or None
+                    return int(item.id), rec_type
         return None
 
     @staticmethod
