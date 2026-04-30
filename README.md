@@ -346,7 +346,7 @@ curl http://localhost:8000/recommendations/12345 \
 
 ## API
 
-Полная документация всех 21 эндпоинта — в [`docs/API.md`](docs/API.md).
+Полная документация всех 22 эндпоинтов — в [`docs/API.md`](docs/API.md).
 
 Интерактивная документация (Swagger UI) доступна по адресу:
 
@@ -363,7 +363,7 @@ http://localhost:8000/docs
 | `POST` | `/staging-area` | Добавить ресурс для RAG |
 | `GET` | `/staging-area/{id}` | Получить ресурс |
 | `POST` | `/staging-area/email` | Импорт email из Mautic |
-| `POST` | `/staging-area/resources/type` | Зарегистрировать тип ресурса |
+| `POST` | `/staging-area/resorces/type` | Зарегистрировать тип ресурса |
 | `POST` | `/staging-area/recommendations/type` | Зарегистрировать тип рекомендации |
 | `POST` | `/recommendations/generate` | Запустить генерацию |
 | `GET` | `/recommendations/status/{token}` | Статус задачи генерации |
@@ -377,6 +377,7 @@ http://localhost:8000/docs
 | `GET` | `/vector-db/resource-status/{id}` | Статус индексации ресурса |
 | `POST` | `/mautic/field` | Создать поле у всех контактов Mautic |
 | `PATCH` | `/mautic/field` | Заполнить поле для конкретного контакта |
+| `GET` | `/mautic/contact/check` | Проверить уникальность контакта в Mautic по email |
 
 ---
 
